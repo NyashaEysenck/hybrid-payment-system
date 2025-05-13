@@ -4,13 +4,13 @@ import { useToast } from "@/hooks/use-toast";
 import * as walletService from "./WalletService"
 import { useAuth } from "./AuthContext";
 import { useOfflineBalance } from "./OfflineBalanceContext";
+import { saveUser } from "@/utils/storage";
 
 import { Transaction, SendMoneyParams, WalletContextType } from "./types";
 
-
 export const useWalletState = (): WalletContextType => {
   const { toast } = useToast();
-  const { user } = useAuth();
+  const { user, setUser } = useAuth();
   const { refreshOfflineBalance } = useOfflineBalance();
   const [balance, setBalance] = useState(0);
   const [reservedBalance, setReservedBalance] = useState(0);
@@ -62,6 +62,24 @@ export const useWalletState = (): WalletContextType => {
       const { reservedBalance } = await walletService.reserveTokens(amount);
       setReservedBalance(reservedBalance);
       
+      // Update user's offline_credits in AuthContext
+      if (user) {
+        // Create updated user object with new offline_credits
+        const updatedUser = {
+          ...user,
+          offline_credits: reservedBalance
+        };
+        
+        // Update user in AuthContext
+        setUser(updatedUser);
+        
+        // Persist updated user to storage
+        const email = localStorage.getItem('lastEmail');
+        if (email) {
+          await saveUser(email, updatedUser);
+        }
+      }
+      
       // Refresh the offline balance to reflect the reserved tokens
       await refreshOfflineBalance();
       
@@ -74,7 +92,7 @@ export const useWalletState = (): WalletContextType => {
     } finally {
       setIsLoading(false);
     }
-  }, [handleError, toast, refreshOfflineBalance]);
+  }, [handleError, toast, refreshOfflineBalance, user, setUser]);
 
   const releaseTokens = useCallback(async (amount: number) => {
     if (amount <= 0) {
@@ -91,6 +109,24 @@ export const useWalletState = (): WalletContextType => {
       const { reservedBalance } = await walletService.releaseTokens(amount);
       setReservedBalance(reservedBalance);
       
+      // Update user's offline_credits in AuthContext
+      if (user) {
+        // Create updated user object with new offline_credits
+        const updatedUser = {
+          ...user,
+          offline_credits: reservedBalance
+        };
+        
+        // Update user in AuthContext
+        setUser(updatedUser);
+        
+        // Persist updated user to storage
+        const email = localStorage.getItem('lastEmail');
+        if (email) {
+          await saveUser(email, updatedUser);
+        }
+      }
+      
       // Refresh the offline balance to reflect the released tokens
       await refreshOfflineBalance();
       
@@ -103,7 +139,7 @@ export const useWalletState = (): WalletContextType => {
     } finally {
       setIsLoading(false);
     }
-  }, [handleError, toast, refreshOfflineBalance]);
+  }, [handleError, toast, refreshOfflineBalance, user, setUser]);
 
   const addTransaction = useCallback(async (transaction: Omit<Transaction, "id" | "date">) => {
     setIsLoading(true);
