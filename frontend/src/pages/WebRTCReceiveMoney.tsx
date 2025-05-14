@@ -13,9 +13,9 @@ import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { useToast } from "@/components/ui/use-toast";
 import { Separator } from "@/components/ui/separator";
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
-import { ArrowLeft, RefreshCw, CheckCircle, QrCode, ScanLine, Smartphone } from "lucide-react";
+import { ArrowLeft, RefreshCw, CheckCircle, QrCode, ScanLine, Smartphone, ChevronLeft, ChevronRight } from "lucide-react";
 import createWebRTCService, { WebRTCConnectionData } from '@/services/WebRTCService';
-import { encodeConnectionData, decodeConnectionData, joinConnectionData } from '@/utils/qrCodeUtils';
+import { encodeConnectionData, decodeConnectionData, joinConnectionData, splitConnectionData } from '@/utils/qrCodeUtils';
 
 // Steps in the receive money process
 type ReceiveMoneyStep = 'scan' | 'createAnswer' | 'waitForPayment' | 'complete';
@@ -43,6 +43,8 @@ const WebRTCReceiveMoney = () => {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [answerQrData, setAnswerQrData] = useState<string | null>(null);
+  const [answerQrDataChunks, setAnswerQrDataChunks] = useState<string[]>([]);
+  const [currentAnswerChunkIndex, setCurrentAnswerChunkIndex] = useState(0);
   const [webrtcService, setWebrtcService] = useState<ReturnType<typeof createWebRTCService> | null>(null);
   const [transaction, setTransaction] = useState<Transaction | null>(null);
   const [showScanner, setShowScanner] = useState(true);
@@ -209,68 +211,33 @@ const WebRTCReceiveMoney = () => {
   
   // Process offer data after it's been decoded
   const processOfferData = async (offerData: WebRTCConnectionData) => {
+    console.log('Processing offer data...');
+    if (!webrtcService) {
+      throw new Error('WebRTC service not initialized');
+    }
+    
     try {
-      if (!webrtcService) {
-        throw new Error('WebRTC service not initialized');
-      }
-      
       // Create answer
-      console.log('Initializing receiver connection...');
-      const answerData = await webrtcService.initiateReceiverConnection(offerData);
-      console.log('Answer created successfully');
+      const answer = await webrtcService.initiateReceiverConnection(offerData);
+      console.log('Created answer:', answer);
       
-      // Encode answer data for QR code
-      console.log('Encoding answer data for QR code...');
-      try {
-        const encodedAnswer = encodeConnectionData(answerData);
-        console.log('QR code data size:', encodedAnswer.length, 'characters');
-        setAnswerQrData(encodedAnswer);
-        
-        // Set up message handler
-        console.log('Setting up message handler...');
-        webrtcService.onMessage((message) => {
-          console.log('Received message:', message);
-          if (message.type === 'payment') {
-            console.log('Payment message received, processing...');
-            handlePaymentReceived(message);
-          }
-        });
-        
-        // Set up connection state handler
-        console.log('Setting up connection state handler...');
-        webrtcService.onConnectionStateChange((state) => {
-          console.log('Connection state changed:', state);
-          if (state === 'connected') {
-            // Connection established
-            console.log('WebRTC connection established');
-            toast({
-              title: "Connection Established",
-              description: "Connected to sender device",
-              duration: 3000,
-            });
-            setStep('waitForPayment');
-          } else if (state === 'failed' || state === 'disconnected' || state === 'closed') {
-            console.log('WebRTC connection lost:', state);
-            if (step !== 'complete') {
-              setError('Connection lost. Please try again.');
-              setStep('scan');
-            }
-          }
-        });
-        
-        // Move to next step
-        setStep('createAnswer');
-      } catch (encodeError) {
-        console.error('Error encoding answer data:', encodeError);
-        setError('Failed to encode connection data. The answer might be too large.');
-        setStep('scan');
-      }
-    } catch (err) {
-      console.error('Error processing QR code:', err);
-      setError('Failed to process QR code. Please try again.');
-      setStep('scan');
-    } finally {
-      setLoading(false);
+      // Prepare answer data
+      const answerData: WebRTCConnectionData = {
+        type: 'answer' as const,
+        sdp: answer.sdp,
+        senderID: user?.email || '',
+      };
+
+      // Split answer into chunks if needed
+      const chunks = splitConnectionData(answerData);
+      console.log(`Split answer into ${chunks.length} chunks`);
+      
+      setAnswerQrDataChunks(chunks);
+      setCurrentAnswerChunkIndex(0);
+      setStep('createAnswer');
+    } catch (error) {
+      console.error('Error creating answer:', error);
+      throw error;
     }
   };
 
@@ -453,28 +420,43 @@ const WebRTCReceiveMoney = () => {
             </div>
           )}
           
-          {step === 'createAnswer' && answerQrData && (
+          {step === 'createAnswer' && answerQrDataChunks.length > 0 && (
             <div className="space-y-6">
               <div className="text-center">
-                <h2 className="text-xl font-semibold mb-2">Show This QR Code</h2>
-                <p className="text-sm text-gray-500 mb-6">
-                  Show this QR code to the sender to complete the connection
+                <h2 className="text-xl font-semibold mb-2">Show QR Code to Sender</h2>
+                <p className="text-sm text-gray-500">
+                  {answerQrDataChunks.length > 1 
+                    ? `Show QR code ${currentAnswerChunkIndex + 1} of ${answerQrDataChunks.length} to the sender.`
+                    : 'Show this QR code to the sender to establish the connection.'}
                 </p>
               </div>
               
-              <div className="flex justify-center mb-4">
-                <div className="p-4 bg-white border rounded-lg">
-                  <QRCode 
-                    value={answerQrData} 
-                    size={200}
-                    level="H"
-                  />
+              <div className="flex justify-center">
+                <div className="bg-white p-4 rounded-lg shadow-inner">
+                  <QRCode value={answerQrDataChunks[currentAnswerChunkIndex]} size={256} />
                 </div>
               </div>
               
-              <p className="text-center text-sm text-gray-500">
-                Waiting for sender to scan this QR code...
-              </p>
+              {answerQrDataChunks.length > 1 && (
+                <div className="flex justify-between space-x-4">
+                  <Button
+                    variant="outline"
+                    onClick={() => setCurrentAnswerChunkIndex(prev => Math.max(0, prev - 1))}
+                    disabled={currentAnswerChunkIndex === 0}
+                  >
+                    <ChevronLeft className="h-4 w-4" />
+                    Previous
+                  </Button>
+                  <Button
+                    variant="outline"
+                    onClick={() => setCurrentAnswerChunkIndex(prev => Math.min(answerQrDataChunks.length - 1, prev + 1))}
+                    disabled={currentAnswerChunkIndex === answerQrDataChunks.length - 1}
+                  >
+                    Next
+                    <ChevronRight className="h-4 w-4" />
+                  </Button>
+                </div>
+              )}
               
               {error && (
                 <Alert variant="destructive">
