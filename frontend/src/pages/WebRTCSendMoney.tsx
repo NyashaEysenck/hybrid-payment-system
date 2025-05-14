@@ -58,6 +58,11 @@ const WebRTCSendMoney: React.FC = () => {
   const [transaction, setTransaction] = useState<Transaction | null>(null);
   const [showScanner, setShowScanner] = useState(false);
   
+  // Variables for handling multiple QR code chunks when scanning answer
+  const [scannedChunks, setScannedChunks] = useState<string[]>([]);
+  const [totalChunksExpected, setTotalChunksExpected] = useState<number | null>(null);
+  const [isMultiChunkMode, setIsMultiChunkMode] = useState(false);
+  
   // IndexedDB hook for storing transactions
   const { addItem } = useIndexedDB({
     dbName: 'offline-payments',
@@ -179,77 +184,147 @@ const WebRTCSendMoney: React.FC = () => {
   // Handle QR code scan (answer from receiver)
   const handleQrCodeScanned = async (data: string) => {
     console.log('QR code scanned, processing data...');
-    if (!webrtcService) {
-      console.error('WebRTC service not initialized');
-      setError('WebRTC service not initialized');
+    
+    if (!webrtcService || !user?.email) {
+      console.error('WebRTC service not initialized or user not logged in');
+      setError('WebRTC service not initialized or user not logged in');
+      setShowScanner(false);
       return;
     }
     
+    try {
+      // Validate QR code data
+      if (!data || data.trim() === '') {
+        throw new Error('Invalid QR code: empty data');
+      }
+      
+      // Check if this is a multi-chunk QR code
+      if (data.startsWith('CHUNK:')) {
+        // Format: CHUNK:current:total:data
+        const parts = data.split(':', 4);
+        if (parts.length !== 4) {
+          throw new Error('Invalid chunk format');
+        }
+        
+        const currentChunk = parseInt(parts[1]);
+        const totalChunks = parseInt(parts[2]);
+        const chunkData = parts[3];
+        
+        console.log(`Received chunk ${currentChunk} of ${totalChunks}`);
+        
+        // First chunk - initialize the collection
+        if (currentChunk === 1) {
+          setScannedChunks([chunkData]);
+          setTotalChunksExpected(totalChunks);
+          setIsMultiChunkMode(true);
+          toast({
+            title: "Multiple QR Codes Required",
+            description: `This is chunk 1 of ${totalChunks}. Please scan all chunks in order.`,
+            duration: 5000,
+          });
+        } else {
+          // Add to existing chunks
+          setScannedChunks(prev => [...prev, chunkData]);
+        }
+        
+        // Check if we have all chunks
+        if (scannedChunks.length + 1 === totalChunks) {
+          // Process all chunks together
+          const allChunks = [...scannedChunks, chunkData];
+          processAnswerData(allChunks);
+          setShowScanner(false);
+        } else {
+          // Keep scanning
+          toast({
+            title: `Chunk ${currentChunk} Scanned`,
+            description: `${totalChunks - currentChunk} more chunks to scan.`,
+            duration: 3000,
+          });
+          // Don't hide scanner, we need more chunks
+          return;
+        }
+      } else {
+        // Single chunk - process directly
+        processAnswerData([data]);
+        setShowScanner(false);
+      }
+    } catch (err) {
+      console.error('Error processing QR code:', err);
+      setError(`Failed to process QR code: ${err instanceof Error ? err.message : 'Unknown error'}`);
+      setShowScanner(false);
+    }
+  };
+  
+  // Process answer data after all chunks are collected
+  const processAnswerData = async (chunks: string[]) => {
     setLoading(true);
     setError(null);
     
     try {
-      // Decode answer data from QR code
-      console.log('Decoding QR code data, length:', data.length);
+      // Join chunks if multiple
+      let answerData: WebRTCConnectionData;
       
-      // Validate the data is Base64 encoded
-      if (!/^[A-Za-z0-9+/=]+$/.test(data)) {
-        console.error('QR code data is not valid Base64');
-        throw new Error('Invalid QR code format: not Base64 encoded');
+      if (chunks.length > 1 || isMultiChunkMode) {
+        console.log(`Processing ${chunks.length} chunks...`);
+        answerData = joinConnectionData(chunks);
+      } else {
+        // Single chunk
+        answerData = decodeConnectionData(chunks[0]);
       }
       
-      const answerData = decodeConnectionData(data);
-      console.log('Answer data decoded successfully:', answerData.type);
+      console.log('Decoded answer data:', answerData);
       
+      // Validate answer data
       if (answerData.type !== 'answer') {
-        console.error('Invalid QR code type:', answerData.type);
-        throw new Error('Invalid QR code: not an answer');
+        throw new Error('Invalid answer data: wrong type');
       }
       
-      // Complete the connection
-      await webrtcService.completeSenderConnection(answerData);
+      // Set answer in WebRTC service
+      await webrtcService!.completeSenderConnection(answerData);
+      
+      // Set up message handler
+      webrtcService!.onMessage((message) => {
+        console.log('Received message:', message);
+        // No specific handling needed for sender
+      });
+      
+      // Set up connection state handler
+      webrtcService!.onConnectionStateChange((state) => {
+        console.log('Connection state changed:', state);
+        if (state === 'connected') {
+          // Connection established
+          console.log('WebRTC connection established');
+          toast({
+            title: "Connection Established",
+            description: "Connected to receiver device",
+            duration: 3000,
+          });
+          setStep('sending');
+          
+          // Send payment data
+          setTimeout(() => {
+            handlePaymentConfirmation();
+          }, 1000);
+        } else if (state === 'failed' || state === 'disconnected' || state === 'closed') {
+          console.log('WebRTC connection lost:', state);
+          if (step !== 'complete') {
+            setError('Connection lost. Please try again.');
+            setStep('createOffer');
+          }
+        }
+      });
       
       // Move to next step
-      setStep('sending');
+      setStep('waitForAnswer');
+    } catch (err) {
+      console.error('Error processing answer data:', err);
+      setError(`Failed to process answer data: ${err instanceof Error ? err.message : 'Unknown error'}`);
+      setStep('createOffer');
       
-      // Send payment data
-      const paymentData = {
-        type: 'payment',
-        amount: amount,
-        senderID: user?.email || 'unknown',
-        recipientID: answerData.senderID || recipientId || 'unknown',
-        timestamp: Date.now(),
-        note: note,
-        transactionId: uuidv4()
-      };
-      
-      // Send the payment data
-      webrtcService.sendMessage(paymentData);
-      
-      // Create transaction record
-      const newTransaction: Transaction = {
-        id: paymentData.transactionId,
-        type: 'send',
-        amount: Number(amount),
-        recipient: answerData.senderID || recipientId || 'unknown',
-        timestamp: paymentData.timestamp,
-        note: note,
-        status: 'pending',
-        receiptId: paymentData.transactionId
-      };
-      
-      setTransaction(newTransaction);
-      
-      // Wait for confirmation or timeout
-      setTimeout(() => {
-        if (step === 'sending') {
-          handlePaymentConfirmation();
-        }
-      }, 5000);
-    } catch (error) {
-      console.error('Error processing answer:', error);
-      setError('Failed to establish connection. Please try again.');
-      setStep('input');
+      // Reset chunk state
+      setScannedChunks([]);
+      setTotalChunksExpected(null);
+      setIsMultiChunkMode(false);
     } finally {
       setLoading(false);
     }
@@ -299,22 +374,30 @@ const WebRTCSendMoney: React.FC = () => {
 
   // Reset the form and go back to input step
   const resetForm = () => {
-    setStep('input');
     setAmount('');
     setRecipientId('');
     setNote('');
     setError(null);
     setOfferQrData(null);
+    setOfferQrDataChunks([]);
+    setCurrentQrChunkIndex(0);
     setTransaction(null);
+    setStep('input');
     
-    // Close and reinitialize WebRTC connection
+    // Reset chunk state
+    setScannedChunks([]);
+    setTotalChunksExpected(null);
+    setIsMultiChunkMode(false);
+    
+    // Close any existing WebRTC connection
     if (webrtcService) {
       webrtcService.closeConnection();
-    }
-    
-    if (user?.email) {
-      const service = createWebRTCService(user.email);
-      setWebrtcService(service);
+      
+      // Reinitialize WebRTC service
+      if (user?.email) {
+        const service = createWebRTCService(user.email);
+        setWebrtcService(service);
+      }
     }
   };
 
