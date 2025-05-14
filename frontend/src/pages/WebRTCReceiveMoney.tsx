@@ -372,6 +372,8 @@ const WebRTCReceiveMoney = () => {
     }
   };
 
+  const readyToScan = !!user?.email && !!webrtcService;
+
   return (
     <Layout>
       <div className="space-y-6">
@@ -398,32 +400,38 @@ const WebRTCReceiveMoney = () => {
                 Make sure the QR code is well-lit and positioned within the scanning area.
               </p>
               
-              {showScanner ? (
-                <QrScanner
-                  onScan={handleQrCodeScanned}
-                  onError={(error) => {
-                    console.error('Scanner error:', error.message);
-                    setError(error.message);
-                    setShowScanner(false);
-                  }}
-                  onCancel={() => {
-                    console.log('Scanner cancelled by user');
-                    setShowScanner(false);
-                  }}
-                />
-              ) : (
-                <div className="text-center">
-                  <Button 
-                    variant="outline" 
-                    onClick={() => {
-                      console.log('Opening QR scanner...');
-                      setShowScanner(true);
+              {readyToScan ? (
+                showScanner ? (
+                  <QrScanner
+                    onScan={handleQrCodeScanned}
+                    onError={(error) => {
+                      console.error('Scanner error:', error.message);
+                      setError(error.message);
+                      setShowScanner(false);
                     }}
-                    className="w-full"
-                  >
-                    <ScanLine className="mr-2 h-4 w-4" />
-                    Open Scanner
-                  </Button>
+                    onCancel={() => {
+                      console.log('Scanner cancelled by user');
+                      setShowScanner(false);
+                    }}
+                  />
+                ) : (
+                  <div className="text-center">
+                    <Button 
+                      variant="outline" 
+                      onClick={() => {
+                        console.log('Opening QR scanner...');
+                        setShowScanner(true);
+                      }}
+                      className="w-full"
+                    >
+                      <ScanLine className="mr-2 h-4 w-4" />
+                      Open Scanner
+                    </Button>
+                  </div>
+                )
+              ) : (
+                <div className="loading">
+                  <p>Initializing...</p>
                 </div>
               )}
               
