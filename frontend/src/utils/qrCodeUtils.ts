@@ -13,7 +13,7 @@ import { WebRTCConnectionData } from "@/services/WebRTCService";
  * The error shows that we need to stay under 10,208 characters, but we'll use a much lower value
  * to ensure reliable scanning across all devices and error correction levels
  */
-const MAX_QR_SIZE = 1000;
+const MAX_QR_SIZE = 400;
 
 /**
  * Encode WebRTC connection data for QR code
