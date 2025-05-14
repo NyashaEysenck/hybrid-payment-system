@@ -19,26 +19,45 @@ const QrScanner = ({ onScan, onError, onCancel }: QRScannerProps) => {
   const lastScanTimeRef = useRef<number>(0);
 
   const startScanner = async () => {
+    console.log('Starting QR scanner...');
     setScanning(true);
     setError(null);
     lastScanRef.current = null;
     lastScanTimeRef.current = 0;
 
     try {
+      // Try to use the back camera first with lower resolution for better performance
       const constraints = { 
         video: { 
           facingMode: "environment",
-          width: { ideal: 1280 },
-          height: { ideal: 720 }
+          width: { ideal: 640 },  // Lower resolution for better performance
+          height: { ideal: 480 }
         } 
       };
+      
+      console.log('Requesting camera access...');
       const stream = await navigator.mediaDevices.getUserMedia(constraints);
+      console.log('Camera access granted');
       
       if (videoRef.current) {
         videoRef.current.srcObject = stream;
         videoRef.current.setAttribute("playsinline", "true");
+        console.log('Starting video playback...');
+        
+        // Add event listener to know when video is actually playing
+        videoRef.current.onloadedmetadata = () => {
+          console.log('Video metadata loaded, dimensions:', 
+            videoRef.current?.videoWidth, 'x', videoRef.current?.videoHeight);
+        };
+        
+        videoRef.current.onplaying = () => {
+          console.log('Video playback started');
+          scanFrame();
+        };
+        
         await videoRef.current.play();
-        scanFrame();
+      } else {
+        console.error('Video reference not available');
       }
     } catch (err) {
       const errorMessage = "Unable to access camera. Please ensure camera permissions are granted.";
@@ -60,7 +79,16 @@ const QrScanner = ({ onScan, onError, onCancel }: QRScannerProps) => {
   };
 
   const scanFrame = () => {
-    if (!videoRef.current || !canvasRef.current || videoRef.current.readyState !== 4) {
+    // Check if video and canvas refs exist
+    if (!videoRef.current || !canvasRef.current) {
+      console.log('Video or canvas ref not available yet');
+      animationFrameRef.current = requestAnimationFrame(scanFrame);
+      return;
+    }
+    
+    // Check if video is ready - IMPORTANT: readyState should be HAVE_ENOUGH_DATA (4)
+    if (videoRef.current.readyState < 4) {
+      console.log('Video not ready yet, readyState:', videoRef.current.readyState);
       animationFrameRef.current = requestAnimationFrame(scanFrame);
       return;
     }
@@ -82,29 +110,50 @@ const QrScanner = ({ onScan, onError, onCancel }: QRScannerProps) => {
     context.drawImage(video, 0, 0, canvas.width, canvas.height);
 
     // Get image data from canvas
-    const imageData = context.getImageData(0, 0, canvas.width, canvas.height);
-
-    // Scan for QR code
-    const code = jsQR(imageData.data, imageData.width, imageData.height, {
-      inversionAttempts: "dontInvert",
-    });
-
-    // If QR code found
-    if (code) {
-      const now = Date.now();
-      // Debounce scan - prevent multiple scans of the same code within 3 seconds
-      if (
-        lastScanRef.current !== code.data || 
-        now - lastScanTimeRef.current > 3000
-      ) {
-        lastScanRef.current = code.data;
-        lastScanTimeRef.current = now;
-        
-        // Process the QR code data
-        onScan(code.data);
-        stopScanner();
+    try {
+      const imageData = context.getImageData(0, 0, canvas.width, canvas.height);
+      
+      // Log dimensions for debugging
+      if (imageData.width === 0 || imageData.height === 0) {
+        console.log('Invalid image dimensions:', imageData.width, 'x', imageData.height);
+        animationFrameRef.current = requestAnimationFrame(scanFrame);
         return;
       }
+
+      // Scan for QR code
+      const code = jsQR(imageData.data, imageData.width, imageData.height, {
+        inversionAttempts: "attemptBoth", // Try both inverted and non-inverted
+      });
+      
+      // Log scanning attempt
+      if (!code) {
+        // Only log occasionally to avoid flooding console
+        if (Math.random() < 0.05) console.log('No QR code found in frame');
+      }
+
+      // If QR code found
+      if (code) {
+        console.log('QR code found!', code.data.substring(0, 20) + '...');
+        const now = Date.now();
+        // Debounce scan - prevent multiple scans of the same code within 3 seconds
+        if (
+          lastScanRef.current !== code.data || 
+          now - lastScanTimeRef.current > 3000
+        ) {
+          lastScanRef.current = code.data;
+          lastScanTimeRef.current = now;
+          
+          // Process the QR code data
+          console.log('Processing QR code data');
+          onScan(code.data);
+          stopScanner();
+          return;
+        } else {
+          console.log('Ignoring duplicate QR code scan');
+        }
+      }
+    } catch (err) {
+      console.error('Error processing frame:', err);
     }
 
     // Continue scanning
@@ -140,6 +189,20 @@ const QrScanner = ({ onScan, onError, onCancel }: QRScannerProps) => {
               muted
             />
             <canvas ref={canvasRef} style={{ display: 'none' }} />
+            {/* Add debugging display */}
+            <div style={{
+              position: 'absolute',
+              bottom: '5px',
+              left: '5px',
+              backgroundColor: 'rgba(0,0,0,0.5)',
+              color: 'white',
+              padding: '2px 5px',
+              fontSize: '10px',
+              borderRadius: '3px',
+              zIndex: 10
+            }}>
+              Scanning... {videoRef.current?.readyState || 'initializing'}/4
+            </div>
             <div style={{ 
               position: 'absolute', 
               inset: 0, 

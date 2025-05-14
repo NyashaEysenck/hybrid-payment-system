@@ -1,5 +1,8 @@
 import { useState, useEffect } from 'react';
 
+// Default database version to use across the application
+const DEFAULT_DB_VERSION = 1;
+
 interface IndexedDBOptions {
   dbName: string;
   storeName: string;
@@ -19,44 +22,82 @@ export interface Transaction {
   synced?: boolean;
 }
 
-export function useIndexedDB({ dbName, storeName, version = 1 }: IndexedDBOptions) {
+export function useIndexedDB({ dbName, storeName, version = DEFAULT_DB_VERSION }: IndexedDBOptions) {
   const [db, setDb] = useState<IDBDatabase | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(false);
+  const [isInitialized, setIsInitialized] = useState(false);
 
   useEffect(() => {
     const openDB = () => {
       return new Promise<IDBDatabase>((resolve, reject) => {
-        const request = indexedDB.open(dbName, version);
-
-        request.onupgradeneeded = (event) => {
-          const db = (event.target as IDBOpenDBRequest).result;
-          if (!db.objectStoreNames.contains(storeName)) {
-            db.createObjectStore(storeName, { keyPath: 'id' });
-            console.log(`Created object store: ${storeName}`);
+        try {
+          // Check if IndexedDB is available
+          if (!window.indexedDB) {
+            const errorMsg = 'Your browser doesn\'t support IndexedDB. Some features may not work properly.';
+            console.error(errorMsg);
+            reject(new Error(errorMsg));
+            return;
           }
-        };
 
-        request.onsuccess = (event) => {
-          const db = (event.target as IDBOpenDBRequest).result;
-          console.log(`Successfully opened IndexedDB: ${dbName}`);
-          resolve(db);
-        };
+          console.log(`Attempting to open IndexedDB database: ${dbName}, version: ${version}`);
+          const request = indexedDB.open(dbName, version);
 
-        request.onerror = (event) => {
-          const error = `Error opening IndexedDB: ${(event.target as IDBOpenDBRequest).error}`;
-          console.error(error);
-          reject(new Error(error));
-        };
+          request.onupgradeneeded = (event) => {
+            try {
+              const db = (event.target as IDBOpenDBRequest).result;
+              const oldVersion = event.oldVersion;
+              console.log(`Upgrading database from version ${oldVersion} to ${version}`);
+              
+              // Create the object store if it doesn't exist
+              if (!db.objectStoreNames.contains(storeName)) {
+                db.createObjectStore(storeName, { keyPath: 'id' });
+                console.log(`Created object store: ${storeName}`);
+              }
+            } catch (upgradeError) {
+              console.error('Error during database upgrade:', upgradeError);
+            }
+          };
+
+          request.onsuccess = (event) => {
+            const db = (event.target as IDBOpenDBRequest).result;
+            console.log(`Successfully opened IndexedDB: ${dbName}`);
+            resolve(db);
+          };
+
+          request.onerror = (event) => {
+            const errorObj = (event.target as IDBOpenDBRequest).error;
+            const errorMsg = `Error opening IndexedDB: ${errorObj?.message || 'Unknown error'}`;
+            console.error(errorMsg, event);
+            reject(new Error(errorMsg));
+          };
+
+          // Handle edge cases like private browsing mode
+          request.onblocked = (event) => {
+            console.error('Database request blocked. Close other tabs with this site open.', event);
+            reject(new Error('Database request blocked. Try closing other tabs with this site open.'));
+          };
+        } catch (error) {
+          const errorMsg = `Unexpected error opening IndexedDB: ${error instanceof Error ? error.message : 'Unknown error'}`;
+          console.error(errorMsg);
+          reject(new Error(errorMsg));
+        }
       });
     };
 
     const initDB = async () => {
       try {
+        setIsLoading(true);
         const database = await openDB();
         setDb(database);
+        setIsInitialized(true);
+        console.log(`IndexedDB initialized for ${dbName}/${storeName}`);
       } catch (err) {
-        setError(err instanceof Error ? err.message : 'Unknown error initializing IndexedDB');
+        const errorMsg = err instanceof Error ? err.message : 'Unknown error initializing IndexedDB';
+        console.error(`IndexedDB initialization error for ${dbName}/${storeName}:`, errorMsg);
+        setError(errorMsg);
+      } finally {
+        setIsLoading(false);
       }
     };
 
@@ -136,8 +177,26 @@ export function useIndexedDB({ dbName, storeName, version = 1 }: IndexedDBOption
     });
   };
 
-  const getAllItems = async <T>(): Promise<T[]> => {
-    return new Promise((resolve, reject) => {
+  const getAllItems = async <T>() => {
+    // If database is not initialized yet, wait for it
+    if (!db && !error) {
+      console.log(`Waiting for database ${dbName}/${storeName} to initialize...`);
+      await new Promise(resolve => {
+        const checkInterval = setInterval(() => {
+          if (isInitialized || error) {
+            clearInterval(checkInterval);
+            resolve(true);
+          }
+        }, 100);
+        // Timeout after 5 seconds
+        setTimeout(() => {
+          clearInterval(checkInterval);
+          resolve(false);
+        }, 5000);
+      });
+    }
+    
+    return new Promise<T[]>((resolve, reject) => {
       if (!db) {
         reject(new Error('Database not initialized'));
         return;

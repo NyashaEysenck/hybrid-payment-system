@@ -55,20 +55,23 @@ router.post('/reserve', async (req, res) => {
       return res.status(400).json({ message: 'Invalid amount specified' });
     }
 
-    await User.updateOne(
+    // Update the user's balances
+    const updatedUser = await User.findOneAndUpdate(
       { _id: user_id },
       { 
           $inc: { 
               balance: -amount, 
               offline_credits: amount 
           } 
-      }
-      );
+      },
+      { new: true } // Return the updated document
+    );
 
     res.json({ 
       user_id, 
-      balance: user.balance, 
-      reserved_Balance: user.offline_credits 
+      balance: updatedUser.balance, 
+      reserved_Balance: updatedUser.offline_credits,
+      transferredAmount: amount
     });
 
   } catch (err) {
@@ -97,20 +100,23 @@ router.post('/release', async (req, res) => {
       return res.status(400).json({ message: 'Invalid amount specified' });
     }
 
-    await User.updateOne(
+    // Update the user's balances
+    const updatedUser = await User.findOneAndUpdate(
       { _id: user_id },
       { 
         $inc: { 
           balance: amount, 
           offline_credits: -amount 
         } 
-      }
+      },
+      { new: true } // Return the updated document
     );
 
     res.json({ 
       user_id, 
-      balance: user.balance, 
-      reserved_Balance: user.offline_credits 
+      balance: updatedUser.balance, 
+      reserved_Balance: updatedUser.offline_credits,
+      transferredAmount: amount
     });
 
   } catch (err) {

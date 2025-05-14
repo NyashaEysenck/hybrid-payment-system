@@ -9,10 +9,11 @@ import { WebRTCConnectionData } from "@/services/WebRTCService";
 
 /**
  * Maximum size for QR code data (in characters)
- * Standard QR codes can hold up to about 4,296 alphanumeric characters
- * We're setting a lower limit to ensure reliable scanning
+ * QR codes have different capacity limits based on version and error correction level
+ * The error shows that we need to stay under 10,208 characters, but we'll use a much lower value
+ * to ensure reliable scanning across all devices and error correction levels
  */
-const MAX_QR_SIZE = 2500;
+const MAX_QR_SIZE = 1000;
 
 /**
  * Encode WebRTC connection data for QR code
@@ -74,19 +75,35 @@ export function decodeConnectionData(encodedData: string): WebRTCConnectionData 
  * @returns Array of encoded strings, each suitable for a QR code
  */
 export function splitConnectionData(data: WebRTCConnectionData): string[] {
-  const encoded = encodeConnectionData(data);
+  // First, convert to JSON and encode to base64
+  const jsonString = JSON.stringify(data);
+  const encoded = btoa(jsonString);
   
-  // If the encoded data fits in one QR code, return it
+  // Calculate chunk size - leave room for chunk header
+  // Format: CHUNK:current:total:data
+  // We need to leave room for the header which is about 20 chars
+  const CHUNK_SIZE = MAX_QR_SIZE - 20;
+  
+  // If the encoded data fits in one QR code, return it directly
   if (encoded.length <= MAX_QR_SIZE) {
     return [encoded];
   }
   
-  // Otherwise, split it into multiple chunks
+  // Otherwise, split it into multiple chunks with headers
   const chunks: string[] = [];
-  for (let i = 0; i < encoded.length; i += MAX_QR_SIZE) {
-    chunks.push(encoded.slice(i, i + MAX_QR_SIZE));
+  const totalChunks = Math.ceil(encoded.length / CHUNK_SIZE);
+  
+  for (let i = 0; i < totalChunks; i++) {
+    const start = i * CHUNK_SIZE;
+    const end = Math.min(start + CHUNK_SIZE, encoded.length);
+    const chunkData = encoded.slice(start, end);
+    
+    // Format: CHUNK:current:total:data
+    const chunkWithHeader = `CHUNK:${i + 1}:${totalChunks}:${chunkData}`;
+    chunks.push(chunkWithHeader);
   }
   
+  console.log(`Split data into ${chunks.length} chunks`);
   return chunks;
 }
 
@@ -97,6 +114,35 @@ export function splitConnectionData(data: WebRTCConnectionData): string[] {
  * @returns Decoded WebRTC connection data
  */
 export function joinConnectionData(chunks: string[]): WebRTCConnectionData {
-  const encoded = chunks.join('');
+  // Extract data from chunks (remove headers)
+  const dataChunks: string[] = [];
+  
+  // First, sort the chunks by their index if they have CHUNK: headers
+  const sortedChunks = [...chunks].sort((a, b) => {
+    if (a.startsWith('CHUNK:') && b.startsWith('CHUNK:')) {
+      const aIndex = parseInt(a.split(':', 4)[1]) || 0;
+      const bIndex = parseInt(b.split(':', 4)[1]) || 0;
+      return aIndex - bIndex;
+    }
+    return 0;
+  });
+  
+  // Then extract the data portion from each chunk
+  for (const chunk of sortedChunks) {
+    if (chunk.startsWith('CHUNK:')) {
+      // Format: CHUNK:current:total:data
+      const parts = chunk.split(':', 4);
+      if (parts.length === 4) {
+        dataChunks.push(parts[3]);
+      }
+    } else {
+      // Single chunk without header
+      dataChunks.push(chunk);
+    }
+  }
+  
+  // Join the data parts and decode
+  const encoded = dataChunks.join('');
+  console.log(`Joined ${dataChunks.length} chunks, total length: ${encoded.length}`);
   return decodeConnectionData(encoded);
 }

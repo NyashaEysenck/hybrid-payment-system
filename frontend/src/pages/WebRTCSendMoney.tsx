@@ -17,10 +17,10 @@ import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
-import { ArrowLeft, Send, RefreshCw, CheckCircle, QrCode, ScanLine } from "lucide-react";
+import { ArrowLeft, Send, RefreshCw, CheckCircle, QrCode, ScanLine, ChevronLeft, ChevronRight } from "lucide-react";
 import { v4 as uuidv4 } from 'uuid';
 import createWebRTCService, { WebRTCConnectionData } from '@/services/WebRTCService';
-import { encodeConnectionData, decodeConnectionData } from '@/utils/qrCodeUtils';
+import { encodeConnectionData, decodeConnectionData, splitConnectionData, joinConnectionData } from '@/utils/qrCodeUtils';
 
 // Steps in the send money process
 type SendMoneyStep = 'input' | 'createOffer' | 'waitForAnswer' | 'sending' | 'complete';
@@ -40,7 +40,7 @@ interface Transaction {
 const WebRTCSendMoney: React.FC = () => {
   const { user } = useAuth();
   const { balance } = useWallet();
-  const { offlineBalance, updateOfflineBalance } = useOfflineBalance();
+  const { offlineBalance, updateOfflineBalance, refreshOfflineBalance } = useOfflineBalance();
   const navigate = useNavigate();
   const { toast } = useToast();
   
@@ -52,14 +52,16 @@ const WebRTCSendMoney: React.FC = () => {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [offerQrData, setOfferQrData] = useState<string | null>(null);
+  const [offerQrDataChunks, setOfferQrDataChunks] = useState<string[]>([]);
+  const [currentQrChunkIndex, setCurrentQrChunkIndex] = useState(0);
   const [webrtcService, setWebrtcService] = useState<ReturnType<typeof createWebRTCService> | null>(null);
   const [transaction, setTransaction] = useState<Transaction | null>(null);
   const [showScanner, setShowScanner] = useState(false);
   
   // IndexedDB hook for storing transactions
   const { addItem } = useIndexedDB({
-    dbName: 'offlinePayments',
-    storeName: 'transactions',
+    dbName: 'offline-payments',
+    storeName: 'offline-transactions'
   });
 
   // Initialize WebRTC service when component mounts
@@ -97,12 +99,21 @@ const WebRTCSendMoney: React.FC = () => {
 
   // Create WebRTC offer and generate QR code
   const handleCreateOffer = async () => {
-    if (!webrtcService || !user?.email || amount === '' || amount <= 0) {
-      setError('Invalid input or WebRTC service not initialized');
+    console.log('Creating WebRTC offer...');
+    if (!webrtcService || !user?.email) {
+      console.error('WebRTC service not initialized or user not logged in');
+      setError('WebRTC service not initialized or user not logged in');
+      return;
+    }
+    
+    if (amount === '' || amount <= 0) {
+      console.error('Invalid amount:', amount);
+      setError('Please enter a valid amount greater than 0');
       return;
     }
     
     if (amount > offlineBalance) {
+      console.error(`Insufficient balance. Amount: ${amount}, Available: ${offlineBalance}`);
       setError(`Insufficient offline balance. Available: $${offlineBalance.toFixed(2)}`);
       return;
     }
@@ -112,42 +123,53 @@ const WebRTCSendMoney: React.FC = () => {
     
     try {
       // Create WebRTC offer
+      console.log('Initializing sender connection...');
       const offerData = await webrtcService.initiateSenderConnection();
+      console.log('Offer created successfully');
       
-      // Encode offer data for QR code
-      const encodedOffer = encodeConnectionData(offerData);
-      setOfferQrData(encodedOffer);
-      
-      // Set up message handler
-      webrtcService.onMessage((message) => {
-        console.log('Received message:', message);
-        if (message.type === 'payment_confirmation') {
-          handlePaymentConfirmation();
-        }
-      });
-      
-      // Set up connection state handler
-      webrtcService.onConnectionStateChange((state) => {
-        console.log('Connection state changed:', state);
-        if (state === 'connected') {
-          // Connection established
+      // Split and encode offer data for QR code
+      console.log('Encoding offer data for QR code...');
+      try {
+        // First, log the size of the raw JSON data
+        const rawJsonSize = JSON.stringify(offerData).length;
+        console.log(`Raw JSON data size: ${rawJsonSize} characters`);
+        
+        // Use splitConnectionData to handle large data
+        const dataChunks = splitConnectionData(offerData);
+        console.log(`QR code data split into ${dataChunks.length} chunks`);
+        
+        // Log the size of each chunk for debugging
+        dataChunks.forEach((chunk, index) => {
+          console.log(`Chunk ${index + 1} size: ${chunk.length} characters`);
+        });
+        
+        if (dataChunks.length === 1) {
+          // If only one chunk, use the simple approach
+          setOfferQrData(dataChunks[0]);
+          setOfferQrDataChunks([]);
+        } else {
+          // If multiple chunks, store them and show the first one
+          setOfferQrDataChunks(dataChunks);
+          setCurrentQrChunkIndex(0);
+          setOfferQrData(dataChunks[0]);
+          console.log(`Showing chunk 1 of ${dataChunks.length}`);
+          
+          // Show a toast notification to inform the user about multiple QR codes
           toast({
-            title: "Connection Established",
-            description: "Connected to recipient device",
-            duration: 3000,
+            title: "Multiple QR Codes Required",
+            description: `This connection requires ${dataChunks.length} QR codes. Please scan all of them in order.`,
+            duration: 5000,
           });
-        } else if (state === 'failed' || state === 'disconnected' || state === 'closed') {
-          if (step !== 'complete') {
-            setError('Connection lost. Please try again.');
-            setStep('input');
-          }
         }
-      });
-      
-      // Move to next step
-      setStep('createOffer');
-    } catch (error) {
-      console.error('Error creating offer:', error);
+        
+        // Move to next step - using createOffer instead of waitForAnswer since that's where the QR code is displayed
+        setStep('createOffer');
+      } catch (encodeError) {
+        console.error('Error encoding offer data:', encodeError);
+        setError('Failed to encode connection data. The offer might be too large.');
+      }
+    } catch (err) {
+      console.error('Error creating offer:', err);
       setError('Failed to create connection offer. Please try again.');
     } finally {
       setLoading(false);
@@ -156,9 +178,9 @@ const WebRTCSendMoney: React.FC = () => {
 
   // Handle QR code scan (answer from receiver)
   const handleQrCodeScanned = async (data: string) => {
-    setShowScanner(false);
-    
+    console.log('QR code scanned, processing data...');
     if (!webrtcService) {
+      console.error('WebRTC service not initialized');
       setError('WebRTC service not initialized');
       return;
     }
@@ -168,9 +190,19 @@ const WebRTCSendMoney: React.FC = () => {
     
     try {
       // Decode answer data from QR code
+      console.log('Decoding QR code data, length:', data.length);
+      
+      // Validate the data is Base64 encoded
+      if (!/^[A-Za-z0-9+/=]+$/.test(data)) {
+        console.error('QR code data is not valid Base64');
+        throw new Error('Invalid QR code format: not Base64 encoded');
+      }
+      
       const answerData = decodeConnectionData(data);
+      console.log('Answer data decoded successfully:', answerData.type);
       
       if (answerData.type !== 'answer') {
+        console.error('Invalid QR code type:', answerData.type);
         throw new Error('Invalid QR code: not an answer');
       }
       
@@ -228,17 +260,27 @@ const WebRTCSendMoney: React.FC = () => {
     if (!transaction || amount === '') return;
     
     try {
+      console.log('Confirming payment of', amount);
+      console.log('Current offline balance:', offlineBalance);
+      
       // Update transaction status
-      const updatedTransaction = {
+      const updatedTransaction: Transaction = {
         ...transaction,
-        status: 'completed'
+        status: 'completed' as const
       };
       
       // Save transaction to IndexedDB
       await addItem(updatedTransaction);
+      console.log('Transaction saved to IndexedDB:', updatedTransaction);
       
       // Update offline balance
-      await updateOfflineBalance(-Number(amount));
+      const amountNum = Number(amount);
+      console.log('Updating offline balance by -', amountNum);
+      await updateOfflineBalance(-amountNum); // Fixed to match new interface
+      
+      // Refresh the offline balance to ensure consistency
+      await refreshOfflineBalance();
+      console.log('Refreshed offline balance:', offlineBalance);
       
       // Move to complete step
       setTransaction(updatedTransaction);
@@ -246,7 +288,7 @@ const WebRTCSendMoney: React.FC = () => {
       
       toast({
         title: "Payment Sent",
-        description: `$${Number(amount).toFixed(2)} sent successfully`,
+        description: `$${amountNum.toFixed(2)} sent successfully`,
         duration: 5000,
       });
     } catch (error) {
@@ -382,17 +424,61 @@ const WebRTCSendMoney: React.FC = () => {
               
               <div className="flex justify-center mb-4">
                 <div className="p-4 bg-white border rounded-lg">
-                  <QRCode 
-                    value={offerQrData} 
-                    size={200}
-                    level="H"
-                  />
+                  {offerQrData && (
+                    <QRCode 
+                      value={offerQrData} 
+                      size={200}
+                      level="H"
+                    />
+                  )}
                 </div>
               </div>
+              
+              {offerQrDataChunks.length > 1 && (
+                <div className="flex items-center justify-center gap-4 mb-4">
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => {
+                      const newIndex = Math.max(0, currentQrChunkIndex - 1);
+                      setCurrentQrChunkIndex(newIndex);
+                      setOfferQrData(offerQrDataChunks[newIndex]);
+                    }}
+                    disabled={currentQrChunkIndex === 0}
+                  >
+                    <ChevronLeft className="h-4 w-4" />
+                    Previous
+                  </Button>
+                  
+                  <span className="text-sm text-gray-500">
+                    QR Code {currentQrChunkIndex + 1} of {offerQrDataChunks.length}
+                  </span>
+                  
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => {
+                      const newIndex = Math.min(offerQrDataChunks.length - 1, currentQrChunkIndex + 1);
+                      setCurrentQrChunkIndex(newIndex);
+                      setOfferQrData(offerQrDataChunks[newIndex]);
+                    }}
+                    disabled={currentQrChunkIndex === offerQrDataChunks.length - 1}
+                  >
+                    Next
+                    <ChevronRight className="h-4 w-4" />
+                  </Button>
+                </div>
+              )}
               
               <p className="text-center text-sm text-gray-500">
                 Amount: ${typeof amount === 'number' ? amount.toFixed(2) : '0.00'}
               </p>
+              
+              {offerQrDataChunks.length > 1 && (
+                <p className="text-center text-xs text-amber-600 mt-2">
+                  This payment requires multiple QR codes. Ask the recipient to scan all {offerQrDataChunks.length} QR codes in order.
+                </p>
+              )}
               
               {error && (
                 <Alert variant="destructive">
@@ -424,13 +510,20 @@ const WebRTCSendMoney: React.FC = () => {
                 <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
                   <div className="bg-white p-6 rounded-lg max-w-sm w-full">
                     <h3 className="text-lg font-semibold mb-4">Scan Answer QR Code</h3>
+                    <p className="text-sm text-gray-500 mb-4">
+                      Position the QR code from the receiver within the scanning area.
+                    </p>
                     <QrScanner
                       onScan={handleQrCodeScanned}
                       onError={(error) => {
+                        console.error('Scanner error:', error.message);
                         setError(error.message);
                         setShowScanner(false);
                       }}
-                      onCancel={() => setShowScanner(false)}
+                      onCancel={() => {
+                        console.log('Scanner cancelled by user');
+                        setShowScanner(false);
+                      }}
                     />
                   </div>
                 </div>

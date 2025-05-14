@@ -30,8 +30,8 @@ const Layout = ({ children }: LayoutProps) => {
   
   // Initialize IndexedDB for transaction syncing
   const indexedDB = useIndexedDB({
-    dbName: 'greenleaf-finance',
-    storeName: 'transactions'
+    dbName: 'offline-payments',
+    storeName: 'offline-transactions'
   });
 
   // Toggle sidebar collapsed state and persist it

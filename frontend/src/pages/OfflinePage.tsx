@@ -1,10 +1,11 @@
-import { useState, useEffect } from "react";
+import React, { useState, useEffect, useCallback } from "react";
 import Layout from "@/components/Layout";
 import WhiteCard from "@/components/WhiteCard";
 import BalanceDisplay from "@/components/BalanceDisplay";
 import GreenButton from "@/components/GreenButton";
 import { useWallet } from "@/contexts/WalletContext";
 import { useOfflineBalance } from "@/contexts/OfflineBalanceContext";
+import { transferToOffline, transferToOnline } from "@/contexts/WalletService";
 import { 
   CreditCard, 
   Lock, 
@@ -21,28 +22,149 @@ import { Slider } from "@/components/ui/slider";
 import { useNavigate } from "react-router-dom";
 
 const OfflinePage = () => {
-  const { balance, reservedBalance, reserveTokens, releaseTokens } = useWallet();
+  const { balance, fetchWalletData } = useWallet();
   const { offlineBalance, pendingTransactions, refreshOfflineBalance } = useOfflineBalance();
-  const [reserveAmount, setReserveAmount] = useState(20);
+  const [transferAmount, setTransferAmount] = useState(20);
+  const [isProcessing, setIsProcessing] = useState(false);
   const navigate = useNavigate();
 
   // Calculate available balance
-  const availableBalance = balance;
-  const maxReserveAmount = availableBalance > 0 ? availableBalance : 0;
+  const onlineBalance = balance;
+  const maxTransferToOffline = onlineBalance > 0 ? onlineBalance : 0;
+  const maxTransferToOnline = offlineBalance > 0 ? offlineBalance : 0;
 
-  // Refresh offline balance when component mounts
+  // Fetch wallet data when component mounts
   useEffect(() => {
+    console.log('OfflinePage: Fetching wallet data...');
+    fetchWalletData();
     refreshOfflineBalance();
-  }, [refreshOfflineBalance]);
+  }, [fetchWalletData, refreshOfflineBalance]);
+  
+  // Update transfer amount when balances change to ensure it's valid
+  useEffect(() => {
+    // Set transfer amount to the minimum of current value, max transfer to offline, and 20
+    const maxAmount = Math.min(20, maxTransferToOffline);
+    if (maxAmount < transferAmount) {
+      console.log(`Adjusting transfer amount from ${transferAmount} to ${maxAmount} based on available balance`);
+      setTransferAmount(maxAmount > 0 ? maxAmount : 0);
+    }
+  }, [onlineBalance, offlineBalance, maxTransferToOffline, transferAmount]);
 
-  const handleReserveTokens = () => {
-    reserveTokens(reserveAmount);
-    setReserveAmount(Math.min(20, maxReserveAmount - reserveAmount));
+  // Function to reset IndexedDB databases
+  const resetDatabases = useCallback(async () => {
+    setIsProcessing(true);
+    try {
+      console.log('Resetting IndexedDB databases...');
+      
+      // Delete the database - using the consistent database name
+      await new Promise<void>((resolve, reject) => {
+        const deleteRequest = indexedDB.deleteDatabase('offline-payments');
+        
+        deleteRequest.onsuccess = () => {
+          console.log('Database deleted successfully');
+          resolve();
+        };
+        
+        deleteRequest.onerror = () => {
+          console.error('Error deleting database');
+          reject(new Error('Failed to delete database'));
+        };
+      });
+      
+      // Reload the page to reinitialize everything
+      window.location.reload();
+    } catch (error) {
+      console.error('Error resetting databases:', error);
+      setIsProcessing(false);
+    }
+  }, []);
+
+  // Load balances when component mounts
+  useEffect(() => {
+    const loadBalances = async () => {
+      setIsProcessing(true);
+      try {
+        console.log('Loading balances on OfflinePage...');
+        
+        // Refresh wallet data to get latest online balance
+        await fetchWalletData();
+        
+        // Refresh offline balance
+        await refreshOfflineBalance();
+        
+        console.log('Balances loaded successfully - Online:', onlineBalance, 'Offline:', offlineBalance);
+      } catch (error) {
+        console.error('Error loading balances:', error);
+      } finally {
+        setIsProcessing(false);
+      }
+    };
+    
+    loadBalances();
+  }, [fetchWalletData, refreshOfflineBalance]);
+
+  // Handle transferring money from online to offline balance
+  const handleTransferToOffline = async () => {
+    if (transferAmount <= 0 || transferAmount > onlineBalance) {
+      console.error('Invalid transfer amount:', transferAmount);
+      return;
+    }
+    
+    try {
+      setIsProcessing(true);
+      console.log(`Transferring ${transferAmount} from online to offline balance...`);
+      
+      // Use the transferToOffline function from WalletService
+      await transferToOffline(transferAmount);
+      
+      // Update the wallet context state to get the new online balance
+      await fetchWalletData();
+      
+      // Force a refresh of the offline balance from the context
+      await refreshOfflineBalance();
+      
+      console.log('Transfer to offline completed successfully');
+      setTransferAmount(Math.min(20, onlineBalance - transferAmount));
+    } catch (error) {
+      console.error('Error transferring to offline:', error);
+      // Refresh balances in case of error to ensure UI is consistent
+      await fetchWalletData();
+      await refreshOfflineBalance();
+    } finally {
+      setIsProcessing(false);
+    }
   };
 
-  const handleReleaseTokens = () => {
-    releaseTokens(reserveAmount);
-    setReserveAmount(Math.min(20, maxReserveAmount + reserveAmount));
+  // Handle transferring money from offline to online balance
+  const handleTransferToOnline = async () => {
+    if (transferAmount <= 0 || transferAmount > offlineBalance) {
+      console.error('Invalid transfer amount:', transferAmount);
+      return;
+    }
+    
+    try {
+      setIsProcessing(true);
+      console.log(`Transferring ${transferAmount} from offline to online balance...`);
+      
+      // Use the transferToOnline function from WalletService
+      await transferToOnline(transferAmount);
+      
+      // Update the wallet context state to get the new online balance
+      await fetchWalletData();
+      
+      // Force a refresh of the offline balance from the context
+      await refreshOfflineBalance();
+      
+      console.log('Transfer to online completed successfully');
+      setTransferAmount(Math.min(20, offlineBalance - transferAmount));
+    } catch (error) {
+      console.error('Error transferring to online:', error);
+      // Refresh balances in case of error to ensure UI is consistent
+      await fetchWalletData();
+      await refreshOfflineBalance();
+    } finally {
+      setIsProcessing(false);
+    }
   };
 
   const formatSliderValue = (value: number[]) => {
@@ -60,18 +182,13 @@ const OfflinePage = () => {
             <h2 className="text-xl font-semibold text-dark mb-6">Your Balances</h2>
             <div className="space-y-4">
               <BalanceDisplay 
-                amount={availableBalance} 
-                label="Available Online" 
+                amount={onlineBalance} 
+                label="Online Balance" 
                 type="primary" 
               />
               <BalanceDisplay 
-                amount={reservedBalance} 
-                label="Reserved for Offline" 
-                type="reserved" 
-              />
-              <BalanceDisplay 
                 amount={offlineBalance} 
-                label="Current Offline Balance" 
+                label="Offline Balance" 
                 type="secondary" 
               />
               {pendingTransactions > 0 && (
@@ -82,47 +199,47 @@ const OfflinePage = () => {
             </div>
           </WhiteCard>
 
-          {/* Token Management */}
+          {/* Balance Transfer */}
           <WhiteCard className="p-6">
-            <h2 className="text-xl font-semibold text-dark mb-4">Token Management</h2>
+            <h2 className="text-xl font-semibold text-dark mb-4">Balance Transfer</h2>
             <p className="text-dark-lighter text-sm mb-6">
-              Reserve funds for offline payments when you don't have internet access.
+              Transfer funds between your online and offline balances.
             </p>
             
             <div className="space-y-6">
               <div className="space-y-3">
-                <Label className="text-dark">Amount to Reserve/Release</Label>
+                <Label className="text-dark">Amount to Transfer</Label>
                 <Slider
-                  value={[reserveAmount]}
-                  max={Math.max(500, maxReserveAmount, reservedBalance)}
+                  value={[transferAmount]}
+                  max={Math.max(500, maxTransferToOffline, maxTransferToOnline)}
                   step={5}
-                  onValueChange={(value) => setReserveAmount(value[0])}
+                  onValueChange={(value) => setTransferAmount(value[0])}
                   className="py-4"
                 />
                 <div className="flex justify-between text-sm text-dark-lighter">
                   <span>$0</span>
-                  <span>${reserveAmount.toFixed(2)}</span>
+                  <span>${transferAmount.toFixed(2)}</span>
                   <span>$500</span>
                 </div>
               </div>
 
               <div className="flex gap-3">
                 <GreenButton 
-                  onClick={handleReserveTokens}
+                  onClick={handleTransferToOffline}
                   className="flex-1 flex items-center justify-center gap-1"
-                  disabled={availableBalance <= 0 || reserveAmount <= 0}
+                  disabled={onlineBalance < transferAmount || isProcessing}
                 >
-                  <Lock size={16} />
-                  Reserve Tokens
+                  <Smartphone size={16} />
+                  To Offline
                 </GreenButton>
                 <GreenButton 
-                  variant="secondary"
-                  onClick={handleReleaseTokens}
+                  onClick={handleTransferToOnline}
                   className="flex-1 flex items-center justify-center gap-1"
-                  disabled={reservedBalance <= 0 || reserveAmount <= 0}
+                  disabled={offlineBalance < transferAmount || isProcessing}
+                  variant="outline"
                 >
-                  <Unlock size={16} />
-                  Release Tokens
+                  <Wallet size={16} />
+                  To Online
                 </GreenButton>
               </div>
             </div>

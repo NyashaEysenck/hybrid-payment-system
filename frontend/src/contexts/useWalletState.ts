@@ -47,11 +47,11 @@ export const useWalletState = (): WalletContextType => {
     fetchWalletData();
   }, [fetchWalletData]);
 
-  const reserveTokens = useCallback(async (amount: number) => {
+  const transferToOffline = useCallback(async (amount: number) => {
     if (amount <= 0) {
       toast({
         title: "Invalid Amount",
-        description: "Please enter a positive amount to reserve.",
+        description: "Please enter a positive amount to transfer.",
         variant: "destructive",
       });
       return;
@@ -59,16 +59,25 @@ export const useWalletState = (): WalletContextType => {
 
     setIsLoading(true);
     try {
-      const { reservedBalance } = await walletService.reserveTokens(amount);
-      setReservedBalance(reservedBalance);
+      console.log(`Transferring ${amount} to offline balance...`);
       
-      // Update user's offline_credits in AuthContext
+      // Call the new transferToOffline function
+      const { onlineBalance, transferredAmount } = await walletService.transferToOffline(amount);
+      
+      // Update online balance in state
+      setBalance(onlineBalance);
+      
+      console.log(`Updated online balance: ${onlineBalance}, Transferred: ${transferredAmount}`);
+      
+      // Update user's balance in AuthContext
       if (user) {
-        // Create updated user object with new offline_credits
+        // Create updated user object with new balance
         const updatedUser = {
           ...user,
-          offline_credits: reservedBalance
+          balance: onlineBalance
         };
+        
+        console.log('Updating user in AuthContext with new balance');
         
         // Update user in AuthContext
         setUser(updatedUser);
@@ -77,28 +86,30 @@ export const useWalletState = (): WalletContextType => {
         const email = localStorage.getItem('lastEmail');
         if (email) {
           await saveUser(email, updatedUser);
+          console.log('User data persisted to storage with updated balance');
         }
       }
       
-      // Refresh the offline balance to reflect the reserved tokens
+      // Refresh the offline balance
       await refreshOfflineBalance();
+      console.log('Offline balance refreshed after transfer');
       
       toast({
-        title: "Tokens Reserved",
-        description: `$${amount.toFixed(2)} has been reserved for offline use.`,
+        title: "Transfer Successful",
+        description: `$${amount.toFixed(2)} has been transferred to your offline balance.`,
       });
     } catch (err) {
-      handleError(err, "Failed to reserve tokens");
+      handleError(err, "Failed to transfer to offline balance");
     } finally {
       setIsLoading(false);
     }
   }, [handleError, toast, refreshOfflineBalance, user, setUser]);
 
-  const releaseTokens = useCallback(async (amount: number) => {
+  const transferToOnline = useCallback(async (amount: number) => {
     if (amount <= 0) {
       toast({
         title: "Invalid Amount",
-        description: "Please enter a positive amount to release.",
+        description: "Please enter a positive amount to transfer.",
         variant: "destructive",
       });
       return;
@@ -106,16 +117,23 @@ export const useWalletState = (): WalletContextType => {
 
     setIsLoading(true);
     try {
-      const { reservedBalance } = await walletService.releaseTokens(amount);
-      setReservedBalance(reservedBalance);
+      console.log(`Transferring ${amount} from offline to online balance...`);
+      const { onlineBalance, transferredAmount } = await walletService.transferToOnline(amount);
       
-      // Update user's offline_credits in AuthContext
+      // Update online balance in state
+      setBalance(onlineBalance);
+      
+      console.log(`Updated online balance: ${onlineBalance}, Transferred: ${transferredAmount}`);
+      
+      // Update user's balance in AuthContext
       if (user) {
-        // Create updated user object with new offline_credits
+        // Create updated user object with new balance
         const updatedUser = {
           ...user,
-          offline_credits: reservedBalance
+          balance: onlineBalance
         };
+        
+        console.log('Updating user in AuthContext with new balance');
         
         // Update user in AuthContext
         setUser(updatedUser);
@@ -124,18 +142,20 @@ export const useWalletState = (): WalletContextType => {
         const email = localStorage.getItem('lastEmail');
         if (email) {
           await saveUser(email, updatedUser);
+          console.log('User data persisted to storage with updated balance');
         }
       }
       
-      // Refresh the offline balance to reflect the released tokens
+      // Refresh the offline balance
       await refreshOfflineBalance();
+      console.log('Offline balance refreshed after transfer');
       
       toast({
-        title: "Tokens Released",
-        description: `$${amount.toFixed(2)} has been returned to your main balance.`,
+        title: "Transfer Successful",
+        description: `$${amount.toFixed(2)} has been transferred to your online balance.`,
       });
     } catch (err) {
-      handleError(err, "Failed to release tokens");
+      handleError(err, "Failed to transfer to online balance");
     } finally {
       setIsLoading(false);
     }
@@ -241,12 +261,12 @@ export const useWalletState = (): WalletContextType => {
   
   return {
     balance,
-    reservedBalance,
+    reservedBalance: 0, // Keeping for backward compatibility, but always 0 now
     transactions,
     isLoading,
     error,
-    reserveTokens,
-    releaseTokens,
+    transferToOffline,
+    transferToOnline,
     addTransaction,
     addFunds,
     sendMoney,

@@ -35,15 +35,15 @@ export interface SendMoneyParams {
 
 export interface WalletContextType {
   balance: number;
-  reservedBalance: number;
+  reservedBalance: number; // Keeping for backward compatibility
   transactions: Transaction[];
   isLoading: boolean;
   error: string | null;
-  reserveTokens: (amount: number) => Promise<void>;
-  releaseTokens: (amount: number) => Promise<void>;
+  transferToOffline: (amount: number) => Promise<void>;
+  transferToOnline: (amount: number) => Promise<void>;
   addTransaction: (transaction: Omit<Transaction, "id" | "date">) => Promise<void>;
   addFunds: (amount: number) => Promise<void>;
-  sendMoney: (params: SendMoneyParams) => Promise<void>;
+  sendMoney: (params: SendMoneyParams) => Promise<Transaction | null>;
   fetchWalletData: () => Promise<void>;
 }
 

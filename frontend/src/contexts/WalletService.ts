@@ -1,67 +1,308 @@
 // frontend/src/contexts/wallet/walletService.ts
 import api from "@/utils/api";
 import { Transaction, SendMoneyParams } from "./types";
-import { getUser} from "@/utils/storage";
+import { getUser, saveUser } from "@/utils/storage";
 
-export const fetchWalletData = async () => {
-  const email = localStorage.getItem('lastEmail');
-  if (!email) throw new Error('No email found in localStorage');
+// Define interfaces for the transfer function return types
+interface TransferResult {
+  onlineBalance: number;
+  offlineBalance: number;
+  transferredAmount: number;
+}
 
+// Keys for storing wallet data in localStorage
+const WALLET_BALANCE_KEY = 'walletBalance';
+const WALLET_RESERVED_BALANCE_KEY = 'walletReservedBalance';
+const WALLET_LAST_UPDATED_KEY = 'walletLastUpdated';
+
+// Function to save wallet balances to localStorage
+const saveWalletDataToLocalStorage = (balance: number, reservedBalance: number) => {
   try {
-    // Get user data from local storage instead of API
-    const localUser = await getUser(email);
-    
-    if (!localUser) {
-      throw new Error('User not found in local storage');
-    }
-
-    // Decrypt user data if needed (assuming it might be encrypted)
-    let userData = localUser;
-    if (localUser.encryptedData) {
-      // Note: You'll need the password to decrypt, which you might not have here
-      // This is a potential limitation of this approach
-      throw new Error('Cannot decrypt user data without password');
-    }
-
-    return {
-      balance: userData.balance || 0,
-      reservedBalance: userData.offline_credits || 0, // Using offline_credits as reserved balance
-      transactions: [] // Still returning empty array as we don't store transactions locally
-    };
+    localStorage.setItem(WALLET_BALANCE_KEY, balance.toString());
+    localStorage.setItem(WALLET_RESERVED_BALANCE_KEY, reservedBalance.toString());
+    localStorage.setItem(WALLET_LAST_UPDATED_KEY, Date.now().toString());
+    console.log('Wallet data saved to localStorage:', { balance, reservedBalance });
   } catch (error) {
-    console.error('Error fetching wallet data from local storage:', error);
-    
-    // Fallback to API if local data fails
-    try {
-  
-      const balanceRes = await api.post('/wallet/balance', { email });
-      const transactionRes = await api.get('/transactions/user', { params: { email } });
-      console.log(transactionRes.data.data)
-
-      return {
-        balance: balanceRes.data.balance,
-        reservedBalance: balanceRes.data.reserved_Balance || 0,
-        transactions: transactionRes.data.data
-      };
-    } catch (apiError) {
-      console.error('Error fetching wallet data from API:', apiError);
-      throw apiError;
-    }
+    console.error('Error saving wallet data to localStorage:', error);
   }
 };
 
-export const reserveTokens = async (amount: number) => {
-  const email = localStorage.getItem("lastEmail")
-  const response = await api.post('/wallet/reserve', { amount, email });
-
-  return { reservedBalance: response.data.reserved_Balance };
+// Function to get wallet data from localStorage
+const getWalletDataFromLocalStorage = () => {
+  try {
+    const balanceStr = localStorage.getItem(WALLET_BALANCE_KEY);
+    const reservedBalanceStr = localStorage.getItem(WALLET_RESERVED_BALANCE_KEY);
+    const lastUpdatedStr = localStorage.getItem(WALLET_LAST_UPDATED_KEY);
+    
+    if (balanceStr && reservedBalanceStr) {
+      const balance = parseFloat(balanceStr);
+      const reservedBalance = parseFloat(reservedBalanceStr);
+      const lastUpdated = lastUpdatedStr ? parseInt(lastUpdatedStr) : 0;
+      
+      console.log('Retrieved wallet data from localStorage:', { balance, reservedBalance, lastUpdated });
+      return { balance, reservedBalance, lastUpdated };
+    }
+  } catch (error) {
+    console.error('Error retrieving wallet data from localStorage:', error);
+  }
+  
+  return null;
 };
 
+export const fetchWalletData = async () => {
+  console.log('Fetching wallet data...');
+  const email = localStorage.getItem('lastEmail');
+  if (!email) {
+    console.error('No email found in localStorage');
+    throw new Error('No email found in localStorage');
+  }
 
-export const releaseTokens = async (amount: number) => {
-  const email = localStorage.getItem("lastEmail")
-  const response = await api.post('/wallet/release', { amount, email});
-  return { reservedBalance: response.data.reserved_Balance };
+  // First try to get user data from sessionStorage which is not encrypted
+  console.log('Checking sessionStorage for user data...');
+  const sessionUser = sessionStorage.getItem('sessionUser');
+  if (sessionUser) {
+    try {
+      const userData = JSON.parse(sessionUser);
+      console.log('Found user data in sessionStorage:', userData);
+      
+      // Get cached wallet data from localStorage
+      const cachedWalletData = getWalletDataFromLocalStorage();
+      
+      // If we have cached wallet data that's less than 1 hour old, use it
+      const ONE_HOUR = 60 * 60 * 1000; // 1 hour in milliseconds
+      if (cachedWalletData && Date.now() - cachedWalletData.lastUpdated < ONE_HOUR) {
+        console.log('Using cached wallet data from localStorage');
+        return {
+          balance: cachedWalletData.balance,
+          reservedBalance: cachedWalletData.reservedBalance,
+          transactions: [] // Still returning empty array as we don't store transactions locally
+        };
+      }
+      
+      // Use user data from sessionStorage
+      const balance = userData.balance || 0;
+      const reservedBalance = userData.offline_credits || 0;
+      
+      // Save this data to localStorage for future use
+      saveWalletDataToLocalStorage(balance, reservedBalance);
+      
+      return {
+        balance,
+        reservedBalance,
+        transactions: [] // Still returning empty array as we don't store transactions locally
+      };
+    } catch (parseError) {
+      console.error('Error parsing session user data:', parseError);
+      // Continue to next approach if parsing fails
+    }
+  }
+
+  // If session storage doesn't have the data, try IndexedDB
+  console.log('Checking IndexedDB for user data...');
+  try {
+    const localUser = await getUser(email);
+    console.log('IndexedDB user data:', localUser);
+    
+    if (localUser) {
+      // Get cached wallet data from localStorage
+      const cachedWalletData = getWalletDataFromLocalStorage();
+      
+      // If we have cached wallet data that's less than 1 hour old, use it
+      const ONE_HOUR = 60 * 60 * 1000; // 1 hour in milliseconds
+      if (cachedWalletData && Date.now() - cachedWalletData.lastUpdated < ONE_HOUR) {
+        console.log('Using cached wallet data from localStorage');
+        return {
+          balance: cachedWalletData.balance,
+          reservedBalance: cachedWalletData.reservedBalance,
+          transactions: []
+        };
+      }
+    }
+    
+    // If we get here, either no local user was found or it was encrypted
+    // Fall back to API without throwing an error
+    console.log('No usable data in IndexedDB, falling back to API');
+  } catch (error) {
+    console.error('Error accessing local storage:', error);
+    // Continue to API fallback
+  }
+  
+  // Fallback to API
+  console.log('Fetching wallet data from API...');
+  try {
+    const balanceRes = await api.post('/wallet/balance', { email });
+    const transactionRes = await api.get('/transactions/user', { params: { email } });
+    
+    console.log('API balance response:', balanceRes.data);
+    console.log('API transactions response:', transactionRes.data);
+    
+    const balance = balanceRes.data.balance || 0;
+    const reservedBalance = balanceRes.data.reserved_Balance || 0;
+    
+    // Save this data to localStorage for future use
+    saveWalletDataToLocalStorage(balance, reservedBalance);
+    
+    // Also update the user in sessionStorage
+    try {
+      const sessionUser = sessionStorage.getItem('sessionUser');
+      if (sessionUser) {
+        const userData = JSON.parse(sessionUser);
+        userData.balance = balance;
+        userData.offline_credits = reservedBalance;
+        sessionStorage.setItem('sessionUser', JSON.stringify(userData));
+        console.log('Updated user data in sessionStorage');
+      }
+    } catch (sessionError) {
+      console.error('Error updating sessionStorage:', sessionError);
+    }
+    
+    return {
+      balance,
+      reservedBalance,
+      transactions: transactionRes.data.data || []
+    };
+  } catch (apiError) {
+    console.error('Error fetching wallet data from API:', apiError);
+    
+    // If API fails, try to use cached data as a last resort
+    const cachedWalletData = getWalletDataFromLocalStorage();
+    if (cachedWalletData) {
+      console.log('API failed, using cached wallet data as fallback');
+      return {
+        balance: cachedWalletData.balance,
+        reservedBalance: cachedWalletData.reservedBalance,
+        transactions: []
+      };
+    }
+    
+    throw apiError;
+  }
+};
+
+export const transferToOffline = async (amount: number): Promise<TransferResult> => {
+  console.log(`Transferring ${amount} from online to offline balance...`);
+  const email = localStorage.getItem("lastEmail");
+  if (!email) {
+    console.error('No email found in localStorage');
+    throw new Error('No email found in localStorage');
+  }
+  
+  if (amount <= 0) {
+    console.error('Cannot transfer non-positive amount');
+    throw new Error('Amount must be greater than zero');
+  }
+  
+  try {
+    // First, check if we have enough online balance
+    const balanceRes = await api.post('/wallet/balance', { email });
+    const onlineBalance = balanceRes.data.balance || 0;
+    const currentOfflineBalance = balanceRes.data.reserved_Balance || 0;
+    
+    if (onlineBalance < amount) {
+      console.error(`Insufficient online balance: ${onlineBalance} < ${amount}`);
+      throw new Error('Insufficient online balance');
+    }
+    
+    // Deduct from online balance using the reserve endpoint
+    const response = await api.post('/wallet/reserve', { amount, email });
+    console.log('Deduct from online balance response:', response.data);
+    
+    // Get the updated balance from the response
+    const newOnlineBalance = response.data.balance;
+    
+    // Update the cached wallet data
+    saveWalletDataToLocalStorage(newOnlineBalance, 0); // We don't use reserved balance anymore
+    
+    // Update the offline balance in localStorage as a backup
+    const newOfflineBalance = currentOfflineBalance + amount;
+    localStorage.setItem(`offline-balance-${email}`, newOfflineBalance.toString());
+    console.log(`Updated offline balance in localStorage: ${newOfflineBalance}`);
+    
+    // Update the user in sessionStorage
+    try {
+      const sessionUser = sessionStorage.getItem('sessionUser');
+      if (sessionUser) {
+        const userData = JSON.parse(sessionUser);
+        userData.balance = newOnlineBalance;
+        sessionStorage.setItem('sessionUser', JSON.stringify(userData));
+        console.log('Updated user data in sessionStorage after transferring to offline');
+      }
+    } catch (sessionError) {
+      console.error('Error updating sessionStorage:', sessionError);
+    }
+    
+    return { 
+      onlineBalance: newOnlineBalance,
+      offlineBalance: newOfflineBalance,
+      transferredAmount: amount
+    };
+  } catch (error) {
+    console.error('Error transferring to offline:', error);
+    throw error;
+  }
+};
+
+export const transferToOnline = async (amount: number): Promise<TransferResult> => {
+  console.log(`Transferring ${amount} from offline to online balance...`);
+  const email = localStorage.getItem("lastEmail");
+  if (!email) {
+    console.error('No email found in localStorage');
+    throw new Error('No email found in localStorage');
+  }
+  
+  if (amount <= 0) {
+    console.error('Cannot transfer non-positive amount');
+    throw new Error('Amount must be greater than zero');
+  }
+  
+  try {
+    // First, check current balances
+    const balanceRes = await api.post('/wallet/balance', { email });
+    const currentOnlineBalance = balanceRes.data.balance || 0;
+    const currentOfflineBalance = balanceRes.data.reserved_Balance || 0;
+    
+    if (currentOfflineBalance < amount) {
+      console.error(`Insufficient offline balance: ${currentOfflineBalance} < ${amount}`);
+      throw new Error('Insufficient offline balance');
+    }
+    
+    // Add to online balance using the release endpoint
+    const response = await api.post('/wallet/release', { amount, email });
+    console.log('Add to online balance response:', response.data);
+    
+    // Get the updated balance from the response
+    const newOnlineBalance = response.data.balance;
+    
+    // Update the cached wallet data
+    saveWalletDataToLocalStorage(newOnlineBalance, 0); // We don't use reserved balance anymore
+    
+    // Update the offline balance in localStorage as a backup
+    const newOfflineBalance = currentOfflineBalance - amount;
+    localStorage.setItem(`offline-balance-${email}`, newOfflineBalance.toString());
+    console.log(`Updated offline balance in localStorage: ${newOfflineBalance}`);
+    
+    // Update the user in sessionStorage
+    try {
+      const sessionUser = sessionStorage.getItem('sessionUser');
+      if (sessionUser) {
+        const userData = JSON.parse(sessionUser);
+        userData.balance = newOnlineBalance;
+        sessionStorage.setItem('sessionUser', JSON.stringify(userData));
+        console.log('Updated user data in sessionStorage after transferring to online');
+      }
+    } catch (sessionError) {
+      console.error('Error updating sessionStorage:', sessionError);
+    }
+    
+    return { 
+      onlineBalance: newOnlineBalance,
+      offlineBalance: newOfflineBalance,
+      transferredAmount: amount
+    };
+  } catch (error) {
+    console.error('Error transferring to online:', error);
+    throw error;
+  }
 };
 
 export const addTransaction = async (transaction: Omit<Transaction, "id" | "date">) => {

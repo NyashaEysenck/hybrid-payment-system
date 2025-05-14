@@ -17,19 +17,17 @@ import {
 
 const Dashboard = () => {
   const navigate = useNavigate();
-  const { balance, reservedBalance, transactions } = useWallet();
+  const { balance, transactions, fetchWalletData } = useWallet();
   const { offlineBalance, pendingTransactions, refreshOfflineBalance } = useOfflineBalance();
 
-  // Refresh offline balance when component mounts
+  // Refresh balances when component mounts
   useEffect(() => {
     refreshOfflineBalance();
-  }, []);
+    fetchWalletData();
+  }, [refreshOfflineBalance, fetchWalletData]);
 
-  // Available balance is now the actual balance
-  const availableBalance = balance;
-
-  // Total balance includes both available and reserved funds
-  const totalBalance = balance + reservedBalance;
+  // Total balance is the sum of online and offline balances
+  const totalBalance = balance + offlineBalance;
   
   // Get recent transactions (last 5)
   const recentTransactions = useMemo(() => {
@@ -52,31 +50,31 @@ const Dashboard = () => {
             <h2 className="text-xl font-semibold text-dark mb-6">Balance Summary</h2>
             <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
               <BalanceDisplay 
-                amount={totalBalance}  // Updated to reflect total balance
+                amount={totalBalance}
                 label="Total Balance" 
                 size="lg" 
                 type="primary" 
               />
               <BalanceDisplay 
-                amount={availableBalance} // Now the actual balance
-                label="Available Balance" 
+                amount={balance}
+                label="Online Balance" 
                 size="md" 
                 type="secondary" 
               />
               <BalanceDisplay 
-                amount={reservedBalance} 
-                label="Reserved for Offline" 
+                amount={offlineBalance} 
+                label="Offline Balance" 
                 size="md" 
-                type="reserved" 
+                type="secondary" 
               />
             </div>
           </div>
 
-          {/* Offline Balance */}
+          {/* Transfer Options */}
           <div className="mb-6 border-t pt-6">
             <h3 className="font-medium text-dark-light mb-3 flex items-center gap-2">
-              <WifiOff size={18} />
-              Offline Balance
+              <ArrowDownLeft size={18} />
+              Balance Transfer
               {pendingTransactions > 0 && (
                 <span className="text-xs bg-amber-100 text-amber-800 px-2 py-1 rounded-full">
                   {pendingTransactions} pending
@@ -84,16 +82,18 @@ const Dashboard = () => {
               )}
             </h3>
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              <BalanceDisplay 
-                amount={offlineBalance}
-                label="Available Offline" 
-                size="md" 
-                type="secondary" 
-              />
+              <div className="flex items-center gap-4">
+                <GreenButton 
+                  onClick={() => navigate('/offline')}
+                  className="flex items-center gap-2"
+                >
+                  <ArrowDownLeft size={16} />
+                  Transfer Funds
+                </GreenButton>
+              </div>
               <div className="flex items-center">
                 <p className="text-sm text-gray-500">
-                  This balance reflects your online balance adjusted with offline transactions. 
-                  It will be synchronized when you go online.
+                  Transfer funds between your online and offline balances. Offline balance can be used for peer-to-peer payments when you don't have internet access.
                 </p>
               </div>
             </div>
