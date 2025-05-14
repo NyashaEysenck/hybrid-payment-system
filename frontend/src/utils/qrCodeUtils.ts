@@ -137,28 +137,25 @@ export function joinConnectionData(chunks: string[]): WebRTCConnectionData {
   
   // Then extract the data portion from each chunk
   for (const chunk of sortedChunks) {
-    if (chunk.startsWith('CHUNK:')) {
-      // Format: CHUNK:current:total:data
-      const parts = chunk.split(':', 4);
-      if (parts.length === 4) {
-        // Validate that the data part looks like base64
-        const dataChunk = parts[3];
-        if (isValidBase64(dataChunk)) {
+    try {
+      if (chunk.startsWith('CHUNK:')) {
+        // Format: CHUNK:current:total:data
+        const parts = chunk.split(':', 4);
+        if (parts.length === 4) {
+          const dataChunk = parts[3].trim();
           dataChunks.push(dataChunk);
-          console.log(`Added valid base64 chunk: ${dataChunk.substring(0, 20)}...`);
-        } else {
-          console.error(`Invalid base64 data in chunk: ${parts[1]}`);
-          throw new Error(`Invalid base64 data in chunk ${parts[1]}`);
+          console.log(`Added chunk ${parts[1]} of ${parts[2]}: ${dataChunk.substring(0, 20)}...`);
         }
-      }
-    } else {
-      // Single chunk without header - validate it's base64
-      if (isValidBase64(chunk)) {
-        dataChunks.push(chunk);
       } else {
-        console.error('Invalid base64 data in single chunk');
-        throw new Error('Invalid base64 data in single chunk');
+        // Single chunk without header
+        const trimmedChunk = chunk.trim();
+        dataChunks.push(trimmedChunk);
+        console.log(`Added single chunk: ${trimmedChunk.substring(0, 20)}...`);
       }
+    } catch (error) {
+      console.error('Error processing chunk:', error);
+      console.error('Problematic chunk:', chunk);
+      throw new Error(`Failed to process QR code chunk: ${error.message}`);
     }
   }
   
@@ -181,7 +178,10 @@ export function joinConnectionData(chunks: string[]): WebRTCConnectionData {
  * @returns True if the string is valid base64
  */
 function isValidBase64(str: string): boolean {
-  // A simple regex to check if a string is valid base64
-  const base64Regex = /^[A-Za-z0-9+/=]+$/;
-  return base64Regex.test(str);
+  try {
+    // Try to decode the string
+    return btoa(atob(str)) === str;
+  } catch (e) {
+    return false;
+  }
 }
