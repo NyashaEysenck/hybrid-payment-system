@@ -25,7 +25,7 @@ const corsOptions = {
 app.use(cors(corsOptions));
 app.use(express.json());
 // Serve static files from the frontend build directory
-app.use(express.static(path.join(__dirname, '../frontend/dist')));
+app.use(express.static(path.join(__dirname, 'frontend/dist')));
 
 // MongoDB connection
 mongoose.connect(process.env.MONGODB_URI)
