@@ -88,16 +88,13 @@ const WebRTCReceiveMoney = () => {
       setError('WebRTC service not initialized or user not logged in');
       return;
     }
-    
     setLoading(true);
     setError(null);
     
     try {
-      // Validate the data is Base64 encoded
-      console.log('Validating QR code data, length:', data.length);
-      if (!/^[A-Za-z0-9+/=]+$/.test(data)) {
-        console.error('QR code data is not valid Base64');
-        throw new Error('Invalid QR code format: not Base64 encoded');
+      // Validate QR code data
+      if (!data || data.trim() === '') {
+        throw new Error('Invalid QR code: empty data');
       }
       
       // Check if this is a multi-chunk QR code
@@ -122,19 +119,31 @@ const WebRTCReceiveMoney = () => {
           setScannedChunks(new Array(totalChunks).fill(null));
         }
         
-        // Store this chunk
+        // Validate the chunk data is base64 encoded
+        if (!/^[A-Za-z0-9+/=]+$/.test(chunkData)) {
+          console.error('Invalid base64 data in chunk');
+          throw new Error(`Invalid QR code format: chunk ${currentChunk} is not properly encoded`);
+        }
+        
+        // Store this chunk - keep the raw chunk data without any processing
         const updatedChunks = [...scannedChunks];
         updatedChunks[currentChunk - 1] = chunkData;
         setScannedChunks(updatedChunks);
         
+        console.log(`Stored chunk ${currentChunk} of ${totalChunks}, data length: ${chunkData.length}`);
+        console.log(`First 20 chars of chunk: ${chunkData.substring(0, 20)}...`);
+        
         // Check if we have all chunks
         if (updatedChunks.filter(Boolean).length === totalChunks) {
-          // We have all chunks, combine them
+          console.log('All chunks received, processing...');
+          
+          // Join the raw data chunks without the headers
           const combinedData = updatedChunks.join('');
-          console.log('All chunks received, combined data length:', combinedData.length);
+          console.log(`Combined data length: ${combinedData.length}`);
           
           // Process the combined data
           try {
+            // Directly decode the combined base64 data
             const offerData = decodeConnectionData(combinedData);
             console.log('Combined offer data decoded successfully:', offerData.type);
             
@@ -147,7 +156,7 @@ const WebRTCReceiveMoney = () => {
             processOfferData(offerData);
           } catch (error) {
             console.error('Error processing combined chunks:', error);
-            setError('Error processing QR code chunks. Please try again.');
+            setError(`Error processing QR code chunks: ${error instanceof Error ? error.message : 'Unknown error'}`);
             setLoading(false);
             setShowScanner(true);
             setIsMultiChunkMode(false);
@@ -165,6 +174,12 @@ const WebRTCReceiveMoney = () => {
       
       // Single chunk QR code - standard processing
       try {
+        // Validate the data is base64 encoded
+        if (!/^[A-Za-z0-9+/=]+$/.test(data)) {
+          console.error('Invalid base64 data in single QR code');
+          throw new Error('Invalid QR code format: not properly encoded');
+        }
+        
         // Decode offer data from QR code
         console.log('Decoding QR code data...');
         const offerData = decodeConnectionData(data);
@@ -179,15 +194,16 @@ const WebRTCReceiveMoney = () => {
         processOfferData(offerData);
       } catch (error) {
         console.error('Error decoding QR code:', error);
-        setError('Invalid QR code format. Please try again.');
+        setError(`Error decoding QR code: ${error instanceof Error ? error.message : 'Unknown error'}`);
         setLoading(false);
         setShowScanner(true);
       }
-    } catch (error) {
-      console.error('Error processing QR code:', error);
-      setError(error instanceof Error ? error.message : 'Unknown error');
+    } catch (err) {
+      console.error('Error processing QR code:', err);
+      setError(`Failed to process QR code: ${err instanceof Error ? err.message : 'Unknown error'}`);
+      setStep('scan');
+    } finally {
       setLoading(false);
-      setShowScanner(true);
     }
   };
   
