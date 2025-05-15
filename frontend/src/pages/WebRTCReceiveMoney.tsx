@@ -232,6 +232,36 @@ const WebRTCReceiveMoney = () => {
       const chunks = splitConnectionData(answerData);
       console.log(`Split answer into ${chunks.length} chunks`);
       
+      // Set up message handler for payment
+      webrtcService.onMessage((message) => {
+        console.log('Received message:', message);
+        if (message.type === 'payment') {
+          console.log('Payment message received, processing...');
+          handlePaymentReceived(message);
+        }
+      });
+      
+      // Set up connection state handler
+      webrtcService.onConnectionStateChange((state) => {
+        console.log('Connection state changed:', state);
+        if (state === 'connected') {
+          // Connection established
+          console.log('WebRTC connection established');
+          toast({
+            title: "Connection Established",
+            description: "Connected to sender device",
+            duration: 3000,
+          });
+          setStep('waitForPayment');
+        } else if (state === 'failed' || state === 'disconnected' || state === 'closed') {
+          console.log('WebRTC connection lost:', state);
+          if (step !== 'complete') {
+            setError('Connection lost. Please try again.');
+            setStep('scan');
+          }
+        }
+      });
+      
       setAnswerQrDataChunks(chunks);
       setCurrentAnswerChunkIndex(0);
       setStep('createAnswer');
