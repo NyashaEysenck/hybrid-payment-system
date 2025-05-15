@@ -301,8 +301,36 @@ const WebRTCSendMoney: React.FC = () => {
           });
           setStep('sending');
           
-          // Send payment data
+          // Create and send payment data
           setTimeout(() => {
+            // Create payment data
+            const paymentData = {
+              type: 'payment',
+              amount: amount,
+              senderID: user?.email || 'unknown',
+              recipientID: answerData.senderID || recipientId || 'unknown',
+              timestamp: Date.now(),
+              note: note,
+              transactionId: uuidv4()
+            };
+            
+            // Send the payment data through WebRTC
+            webrtcService!.sendMessage(paymentData);
+            
+            // Create transaction record
+            const newTransaction: Transaction = {
+              id: paymentData.transactionId,
+              type: 'send',
+              amount: Number(amount),
+              recipient: answerData.senderID || recipientId || 'unknown',
+              timestamp: paymentData.timestamp,
+              note: note,
+              status: 'pending',
+              receiptId: paymentData.transactionId
+            };
+            
+            // Set transaction and move to confirmation
+            setTransaction(newTransaction);
             handlePaymentConfirmation();
           }, 1000);
         } else if (state === 'failed' || state === 'disconnected' || state === 'closed') {
@@ -332,7 +360,10 @@ const WebRTCSendMoney: React.FC = () => {
 
   // Handle payment confirmation
   const handlePaymentConfirmation = async () => {
-    if (!transaction || amount === '') return;
+    if (!transaction || amount === '') {
+      console.error('Cannot confirm payment: transaction or amount is missing');
+      return;
+    }
     
     try {
       console.log('Confirming payment of', amount);
