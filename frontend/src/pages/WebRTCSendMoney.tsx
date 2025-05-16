@@ -296,7 +296,12 @@ const WebRTCSendMoney: React.FC = () => {
               status: 'completed' as const
             };
             setTransaction(updatedTransaction);
+            
+            // Call payment confirmation to update balance and complete the process
+            console.log('Receipt received, completing payment process');
             handlePaymentConfirmation();
+          } else {
+            console.error('Receipt received but no transaction found');
           }
         }
       });
@@ -342,9 +347,8 @@ const WebRTCSendMoney: React.FC = () => {
               receiptId: paymentData.transactionId
             };
             
-            // Set transaction and move to confirmation
+            // Set transaction only - wait for receipt before confirming
             setTransaction(newTransaction);
-            handlePaymentConfirmation();
           }, 1000);
         } else if (state === 'failed' || state === 'disconnected' || state === 'closed') {
           console.log('WebRTC connection lost:', state);
@@ -373,8 +377,16 @@ const WebRTCSendMoney: React.FC = () => {
 
   // Handle payment confirmation
   const handlePaymentConfirmation = async () => {
+    console.log('handlePaymentConfirmation called with transaction:', transaction);
+    
     if (!transaction || amount === '') {
       console.error('Cannot confirm payment: transaction or amount is missing');
+      return;
+    }
+    
+    // Prevent duplicate confirmations
+    if (step === 'complete') {
+      console.log('Payment already completed, skipping confirmation');
       return;
     }
     
