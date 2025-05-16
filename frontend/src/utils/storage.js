@@ -1,6 +1,5 @@
-
-const DB_NAME = 'AuthDB';
-const STORE_NAME = 'users';
+const AUTH_DB_NAME = 'AuthDB';
+const AUTH_STORE_NAME = 'users';
 
 // Connection pooling remains exactly the same
 let dbConnection = null;
@@ -12,12 +11,12 @@ const openDB = () => {
       return;
     }
 
-    const request = indexedDB.open(DB_NAME, 1);
+    const request = indexedDB.open(AUTH_DB_NAME, 1);
     
     request.onupgradeneeded = (event) => {
       const db = event.target.result;
-      if (!db.objectStoreNames.contains(STORE_NAME)) {
-        db.createObjectStore(STORE_NAME, { keyPath: 'email' });
+      if (!db.objectStoreNames.contains(AUTH_STORE_NAME)) {
+        db.createObjectStore(AUTH_STORE_NAME, { keyPath: 'email' });
       }
     };
 
@@ -50,8 +49,8 @@ export const saveUser = async (email, user) => {
     }
 
     return new Promise((resolve, reject) => {
-      const tx = db.transaction(STORE_NAME, 'readwrite');
-      const store = tx.objectStore(STORE_NAME);
+      const tx = db.transaction(AUTH_STORE_NAME, 'readwrite');
+      const store = tx.objectStore(AUTH_STORE_NAME);
       
       const userToStore = {
         email: email,
@@ -76,8 +75,8 @@ export const saveUser = async (email, user) => {
 export const debugListAllUsers = async () => {
   const db = await openDB();
   return new Promise((resolve) => {
-    const tx = db.transaction(STORE_NAME, 'readonly');
-    const store = tx.objectStore(STORE_NAME);
+    const tx = db.transaction(AUTH_STORE_NAME, 'readonly');
+    const store = tx.objectStore(AUTH_STORE_NAME);
     const request = store.getAll();
     
     request.onsuccess = () => {
@@ -96,10 +95,10 @@ export const getUser = async (email) => {
     console.log('Database connection established');
     
     return new Promise((resolve) => {
-      const tx = db.transaction(STORE_NAME, 'readonly');
+      const tx = db.transaction(AUTH_STORE_NAME, 'readonly');
       console.log('Transaction created');
       
-      const store = tx.objectStore(STORE_NAME);
+      const store = tx.objectStore(AUTH_STORE_NAME);
       console.log('Object store accessed');
       
       const request = store.get(email);
@@ -134,8 +133,8 @@ export const clearUserStorage = async () => {
   try {
     const db = await openDB();
     return new Promise((resolve, reject) => {
-      const tx = db.transaction(STORE_NAME, 'readwrite');
-      const store = tx.objectStore(STORE_NAME);
+      const tx = db.transaction(AUTH_STORE_NAME, 'readwrite');
+      const store = tx.objectStore(AUTH_STORE_NAME);
       
       const request = store.clear();
       

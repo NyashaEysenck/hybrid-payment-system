@@ -13,7 +13,7 @@ export const useWalletState = (): WalletContextType => {
   const { user, setUser } = useAuth();
   const { refreshOfflineBalance } = useOfflineBalance();
   const [balance, setBalance] = useState(0);
-  const [reservedBalance, setReservedBalance] = useState(0);
+  // Removed reservedBalance state as we're using the simplified two-balance approach
   const [transactions, setTransactions] = useState<Transaction[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -34,7 +34,7 @@ export const useWalletState = (): WalletContextType => {
     try {
       const data = await walletService.fetchWalletData();
       setBalance(data.balance);
-      setReservedBalance(data.reservedBalance);
+      // No longer tracking reservedBalance in state
       setTransactions(data.transactions);
     } catch (err) {
       handleError(err, "Failed to fetch wallet data");
@@ -170,11 +170,8 @@ export const useWalletState = (): WalletContextType => {
       if (transaction.transaction_type !== "payment" || transaction.status === "completed") {
         const amountChange = transaction.amount;
         
-        if (transaction.offline_method && transaction.amount < 0) {
-          setReservedBalance(prev => Math.max(0, prev + amountChange));
-        } else {
-          setBalance(prev => prev + amountChange);
-        }
+        // All transactions affect the online balance now
+        setBalance(prev => prev + amountChange);
       }
 
       toast({
@@ -229,7 +226,7 @@ export const useWalletState = (): WalletContextType => {
   
     setIsLoading(true);
     try {
-      const { balance, reservedBalance, transaction } = await walletService.sendMoney({
+      const { balance, transaction } = await walletService.sendMoney({
         sender: email,
         amount,
         recipient,
@@ -237,12 +234,12 @@ export const useWalletState = (): WalletContextType => {
         type
       });
   
-      if (!transaction || balance === undefined || reservedBalance === undefined) {
+      if (!transaction || balance === undefined) {
         throw new Error("Failed to process the transaction. Missing data.");
       }
   
       setBalance(balance);
-      setReservedBalance(reservedBalance);
+      // No longer tracking reservedBalance in state
       setTransactions(prev => [transaction, ...prev]);
   
       toast({

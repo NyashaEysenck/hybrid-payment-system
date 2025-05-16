@@ -3,6 +3,11 @@ import { useState, useEffect } from 'react';
 // Default database version to use across the application
 const DEFAULT_DB_VERSION = 1;
 
+// Standardized database and store names across the application
+export const DB_NAME = 'offline-payments';
+export const TRANSACTIONS_STORE = 'offline-transactions';
+export const BALANCE_STORE = 'offline-balance';
+
 interface IndexedDBOptions {
   dbName: string;
   storeName: string;
@@ -17,12 +22,12 @@ export interface Transaction {
   note?: string;
   timestamp: number;
   receiptId: string;
-  status: 'completed' | 'pending';
+  status: 'completed' | 'pending' | 'failed';
   type: 'online' | 'offline' | 'qr' | 'nfc' | 'bluetooth';
   synced?: boolean;
 }
 
-export function useIndexedDB({ dbName, storeName, version = DEFAULT_DB_VERSION }: IndexedDBOptions) {
+export function useIndexedDB({ dbName = DB_NAME, storeName, version = DEFAULT_DB_VERSION }: IndexedDBOptions) {
   const [db, setDb] = useState<IDBDatabase | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(false);
@@ -53,6 +58,21 @@ export function useIndexedDB({ dbName, storeName, version = DEFAULT_DB_VERSION }
               if (!db.objectStoreNames.contains(storeName)) {
                 db.createObjectStore(storeName, { keyPath: 'id' });
                 console.log(`Created object store: ${storeName}`);
+              }
+              
+              // Ensure all required stores exist in the offline-payments database
+              if (dbName === DB_NAME) {
+                // Create transactions store if it doesn't exist
+                if (!db.objectStoreNames.contains(TRANSACTIONS_STORE) && storeName !== TRANSACTIONS_STORE) {
+                  db.createObjectStore(TRANSACTIONS_STORE, { keyPath: 'id' });
+                  console.log(`Created object store: ${TRANSACTIONS_STORE}`);
+                }
+                
+                // Create balance store if it doesn't exist
+                if (!db.objectStoreNames.contains(BALANCE_STORE) && storeName !== BALANCE_STORE) {
+                  db.createObjectStore(BALANCE_STORE, { keyPath: 'id' });
+                  console.log(`Created object store: ${BALANCE_STORE}`);
+                }
               }
             } catch (upgradeError) {
               console.error('Error during database upgrade:', upgradeError);

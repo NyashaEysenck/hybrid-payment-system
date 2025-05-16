@@ -1,5 +1,5 @@
 import React, { createContext, useContext, useState, useEffect, ReactNode, useCallback } from 'react';
-import { useIndexedDB } from '@/hooks/useIndexedDB';
+import { useIndexedDB, DB_NAME, TRANSACTIONS_STORE, BALANCE_STORE, Transaction as IDBTransaction } from '@/hooks/useIndexedDB';
 import { useAuth } from './AuthContext';
 import { useToast } from '@/components/ui/use-toast';
 import api from '@/utils/api';
@@ -29,16 +29,9 @@ interface OfflineBalanceProviderProps {
   children: ReactNode;
 }
 
-// Interface for offline transactions in IndexedDB
-interface OfflineTransaction {
-  id: string;
-  sender: string;
-  recipient: string;
-  amount: number;
-  timestamp: number;
-  status: 'pending' | 'completed' | 'failed';
+// Interface for offline transactions in IndexedDB - extending the standardized Transaction interface
+interface OfflineTransaction extends Omit<IDBTransaction, 'type' | 'receiptId'> {
   type: 'offline';
-  note?: string;
 }
 
 // Interface for balance records in IndexedDB
@@ -49,10 +42,7 @@ interface BalanceRecord {
   lastUpdated: number;
 }
 
-// Keys for IndexedDB stores - simple and consistent naming
-const DB_NAME = 'offline-payments';
-const TRANSACTIONS_STORE = 'offline-transactions';
-const BALANCE_STORE = 'offline-balance';
+// Using standardized constants imported from useIndexedDB
 
 export const OfflineBalanceProvider: React.FC<OfflineBalanceProviderProps> = ({ children }) => {
   const { toast } = useToast();
@@ -365,7 +355,9 @@ export const OfflineBalanceProvider: React.FC<OfflineBalanceProviderProps> = ({ 
         timestamp: Date.now(),
         status: 'completed',
         type: 'offline',
-        note: amount > 0 ? 'Added to offline balance' : 'Removed from offline balance'
+        note: amount > 0 ? 'Added to offline balance' : 'Removed from offline balance',
+        receiptId: transactionId, // Adding required field from IDBTransaction
+        synced: false // Adding required field from IDBTransaction
       });
       
       console.log(`Transaction recorded for ${Math.abs(amount)}`);

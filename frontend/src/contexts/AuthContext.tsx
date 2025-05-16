@@ -9,8 +9,7 @@ interface User {
   _id: string;
   username: string;
   email: string;
-  balance: number;
-  offline_credits: number;
+  balance: number; // Online balance
   crypto_salt?: string;
 }
 
