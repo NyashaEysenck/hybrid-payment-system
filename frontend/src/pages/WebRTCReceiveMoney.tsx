@@ -318,25 +318,13 @@ const WebRTCReceiveMoney = () => {
         // Continue even if saving to DB fails
       }
       
-      // Update offline balance - with extra debug logging
-      try {
-        // Use direct function call with explicit positive amount
-        console.log('Updating offline balance by adding', amount);
-        await updateOfflineBalance(Math.abs(amount));
-        console.log('✅ Successfully updated offline balance');
-      } catch (balanceError) {
-        console.error('❌ Error updating offline balance:', balanceError);
-        // Continue despite error to show receipt
-      }
+      // Update offline balance
+      console.log('Updating offline balance by', amount);
+      await updateOfflineBalance(amount);
       
       // Refresh the offline balance to ensure consistency
-      try {
-        console.log('Refreshing offline balance...');
-        await refreshOfflineBalance();
-        console.log('✅ Successfully refreshed offline balance');
-      } catch (refreshError) {
-        console.error('❌ Error refreshing offline balance:', refreshError);
-      }
+      console.log('Refreshing offline balance...');
+      await refreshOfflineBalance();
       
       // Ensure the user's offline_credits are in sync with the offline balance
       console.log('Syncing offline credits with user data...');
