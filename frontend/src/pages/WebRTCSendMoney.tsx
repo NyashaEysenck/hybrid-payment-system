@@ -404,10 +404,19 @@ const WebRTCSendMoney: React.FC = () => {
       await addItem(updatedTransaction);
       console.log('Transaction saved to IndexedDB:', updatedTransaction);
       
-      // Update offline balance
+      // Update offline balance - IMPORTANT: Convert to number and ensure it's negative
       const amountNum = Number(amount);
+      if (isNaN(amountNum) || amountNum <= 0) {
+        console.error('Invalid amount for payment:', amount);
+        throw new Error('Invalid payment amount');
+      }
+      
       console.log('Updating offline balance by -', amountNum);
-      await updateOfflineBalance(-amountNum); // Fixed to match new interface
+      
+      // Force a negative amount to subtract from balance
+      const amountToDeduct = -Math.abs(amountNum);
+      await updateOfflineBalance(amountToDeduct);
+      console.log('Balance update completed with amount:', amountToDeduct);
       
       // Refresh the offline balance to ensure consistency
       await refreshOfflineBalance();
@@ -425,6 +434,12 @@ const WebRTCSendMoney: React.FC = () => {
     } catch (error) {
       console.error('Error confirming payment:', error);
       setError('Failed to complete payment. Your balance may still be updated.');
+      
+      // Even if there's an error in updating the balance, still show the receipt
+      if (transaction) {
+        // Use type assertion to fix TypeScript error
+        setStep('complete' as SendMoneyStep);
+      }
     }
   };
 

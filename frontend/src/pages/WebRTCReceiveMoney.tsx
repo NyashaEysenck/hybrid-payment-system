@@ -34,7 +34,7 @@ interface Transaction {
 
 const WebRTCReceiveMoney = () => {
   const { user } = useAuth();
-  const { updateOfflineBalance, refreshOfflineBalance, syncOfflineCredits } = useOfflineBalance();
+  const { updateOfflineBalance, refreshOfflineBalance } = useOfflineBalance();
   const navigate = useNavigate();
   const { toast } = useToast();
   
@@ -285,14 +285,6 @@ const WebRTCReceiveMoney = () => {
       const receiptId = `receipt-${Date.now()}-${Math.random().toString(36).substring(2, 10)}`;
       console.log('Generated receipt ID:', receiptId);
       
-      // Send receipt back to sender
-      console.log('Sending receipt to sender...');
-      webrtcService?.sendMessage({
-        type: 'receipt',
-        receiptId,
-        status: 'success'
-      });
-      
       // Create transaction object
       const amount = Number(paymentData.amount);
       console.log('Payment amount:', amount);
@@ -322,17 +314,24 @@ const WebRTCReceiveMoney = () => {
       console.log('Updating offline balance by', amount);
       await updateOfflineBalance(amount);
       
+      // Log the result
+      console.log('Balance update completed');
+      
       // Refresh the offline balance to ensure consistency
       console.log('Refreshing offline balance...');
       await refreshOfflineBalance();
       
-      // Ensure the user's offline_credits are in sync with the offline balance
-      console.log('Syncing offline credits with user data...');
-      await syncOfflineCredits();
-      
       // Update state
       setTransaction(newTransaction);
       setStep('complete');
+      
+      // Send receipt back to sender AFTER updating our state
+      console.log('Sending receipt to sender...');
+      webrtcService?.sendMessage({
+        type: 'receipt',
+        receiptId,
+        status: 'success'
+      });
       
       toast({
         title: "Payment Received",
@@ -342,6 +341,18 @@ const WebRTCReceiveMoney = () => {
     } catch (error) {
       console.error('Error processing payment:', error);
       setError('Failed to process payment. Please try again.');
+      
+      // Even if there's an error, try to send a receipt to unblock the sender
+      try {
+        webrtcService?.sendMessage({
+          type: 'receipt',
+          receiptId: `error-${Date.now()}`,
+          status: 'error',
+          error: error instanceof Error ? error.message : 'Unknown error'
+        });
+      } catch (sendError) {
+        console.error('Error sending error receipt:', sendError);
+      }
     }
   };
 
