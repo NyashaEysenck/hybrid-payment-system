@@ -285,7 +285,20 @@ const WebRTCSendMoney: React.FC = () => {
       // Set up message handler
       webrtcService!.onMessage((message) => {
         console.log('Received message:', message);
-        // No specific handling needed for sender
+        // Handle receipt message from receiver
+        if (message.type === 'receipt') {
+          console.log('Receipt received from receiver:', message);
+          // Update transaction with receipt and complete the payment
+          if (transaction) {
+            const updatedTransaction = {
+              ...transaction,
+              receiptId: message.receiptId,
+              status: 'completed' as const
+            };
+            setTransaction(updatedTransaction);
+            handlePaymentConfirmation();
+          }
+        }
       });
       
       // Set up connection state handler
