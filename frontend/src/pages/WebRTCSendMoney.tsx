@@ -518,7 +518,8 @@ const WebRTCSendMoney: React.FC = () => {
       });
       
       // Reset to previous step
-      setStep(SendMoneyStep.waitForReceipt);
+      setStep(SendMoneyStep.input);
+      resetForm();
     }
   };
 
