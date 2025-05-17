@@ -196,27 +196,23 @@ export const transferToOffline = async (amount: number): Promise<TransferResult>
     // First, check if we have enough online balance
     const balanceRes = await api.post('/wallet/balance', { email });
     const onlineBalance = balanceRes.data.balance || 0;
-    const currentOfflineBalance = balanceRes.data.reserved_Balance || 0;
+    const currentOfflineBalance = balanceRes.data.offline_balance || 0;
     
     if (onlineBalance < amount) {
       console.error(`Insufficient online balance: ${onlineBalance} < ${amount}`);
       throw new Error('Insufficient online balance');
     }
     
-    // Deduct from online balance using the reserve endpoint
-    const response = await api.post('/wallet/reserve', { amount, email });
-    console.log('Deduct from online balance response:', response.data);
+    // Transfer to offline balance
+    const response = await api.post('/wallet/transfer-to-offline', { amount, email });
+    console.log('Transfer to offline response:', response.data);
     
-    // Get the updated balance from the response
-    const newOnlineBalance = response.data.balance;
+    // Get the updated balances from the response
+    const newOnlineBalance = response.data.online_balance;
+    const newOfflineBalance = response.data.offline_balance;
     
     // Update the cached wallet data
-    saveWalletDataToLocalStorage(newOnlineBalance, 0); // We don't use reserved balance anymore
-    
-    // Update the offline balance in localStorage as a backup
-    const newOfflineBalance = currentOfflineBalance + amount;
-    localStorage.setItem(`offline-balance-${email}`, newOfflineBalance.toString());
-    console.log(`Updated offline balance in localStorage: ${newOfflineBalance}`);
+    saveWalletDataToLocalStorage(newOnlineBalance, newOfflineBalance);
     
     // Update the user in sessionStorage
     try {
@@ -259,27 +255,23 @@ export const transferToOnline = async (amount: number): Promise<TransferResult> 
     // First, check current balances
     const balanceRes = await api.post('/wallet/balance', { email });
     const currentOnlineBalance = balanceRes.data.balance || 0;
-    const currentOfflineBalance = balanceRes.data.reserved_Balance || 0;
+    const currentOfflineBalance = balanceRes.data.offline_balance || 0;
     
     if (currentOfflineBalance < amount) {
       console.error(`Insufficient offline balance: ${currentOfflineBalance} < ${amount}`);
       throw new Error('Insufficient offline balance');
     }
     
-    // Add to online balance using the release endpoint
-    const response = await api.post('/wallet/release', { amount, email });
-    console.log('Add to online balance response:', response.data);
+    // Transfer from offline to online
+    const response = await api.post('/wallet/transfer-to-online', { amount, email });
+    console.log('Transfer to online response:', response.data);
     
-    // Get the updated balance from the response
-    const newOnlineBalance = response.data.balance;
+    // Get the updated balances from the response
+    const newOnlineBalance = response.data.online_balance;
+    const newOfflineBalance = response.data.offline_balance;
     
     // Update the cached wallet data
-    saveWalletDataToLocalStorage(newOnlineBalance, 0); // We don't use reserved balance anymore
-    
-    // Update the offline balance in localStorage as a backup
-    const newOfflineBalance = currentOfflineBalance - amount;
-    localStorage.setItem(`offline-balance-${email}`, newOfflineBalance.toString());
-    console.log(`Updated offline balance in localStorage: ${newOfflineBalance}`);
+    saveWalletDataToLocalStorage(newOnlineBalance, newOfflineBalance);
     
     // Update the user in sessionStorage
     try {

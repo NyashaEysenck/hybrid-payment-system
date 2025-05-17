@@ -2,7 +2,7 @@
 import { createContext, useContext, useState, ReactNode, useEffect, useCallback } from "react";
 import { useToast } from "@/hooks/use-toast";
 import api from "@/utils/api";
-import { getUser, saveUser, clearUserStorage } from "@/utils/storage";
+import { getUser, saveUser, clearUserStorage, WALLET_BALANCE_KEY } from "@/utils/storage";
 import { encryptData, decryptData, deriveMasterKey, generateSalt } from "@/utils/crypto";
 
 interface User {
@@ -69,39 +69,39 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
     setIsLoading(true);
     
     try {
-      const localUser = await getUser(email);
-      console.log(localUser)
-      if (localUser && localUser.crypto_salt) {
-        try {
-          const encryptionKey = deriveMasterKey(password, localUser.crypto_salt);
-          const decryptedUser = decryptData(localUser.encryptedData, encryptionKey);
-          
-          if (decryptedUser) {
-            setUser(decryptedUser);
-            localStorage.setItem('lastEmail', email);
-            toast({ title: "Login successful", description: "Using cached credentials" });
-            return;
-          }
-        } catch (decryptError) {
-          console.log("Local decryption failed, trying server login...");
-        }
-      }
-
+      // Get user data from login
       const response = await api.post('/auth/login', { email, password });
       const remoteUser = response.data.user;
       
-      const salt = remoteUser.crypto_salt || generateSalt();
-      const encryptionKey = deriveMasterKey(password, salt);
-      const encryptedUser = encryptData(remoteUser, encryptionKey);
+      // Get initial balances from wallet
+      const balanceResponse = await api.post('/wallet/balance', { email });
+      const initialOnlineBalance = balanceResponse.data.balance || 0;
+      const initialOfflineBalance = balanceResponse.data.offline_balance || 0;
       
-      const userToSave = { ...remoteUser, crypto_salt: salt };
+      // Add balances to user data
+      const userWithBalances = { 
+        ...remoteUser, 
+        balance: initialOnlineBalance,
+        offline_balance: initialOfflineBalance,
+        crypto_salt: remoteUser.crypto_salt || generateSalt()
+      };
       
-      setUser(userToSave);
+      // Save to localStorage
       localStorage.setItem('lastEmail', email);
+      localStorage.setItem(WALLET_BALANCE_KEY, initialOnlineBalance.toString());
+      localStorage.setItem('offline-balance', initialOfflineBalance.toString());
       
+      // Encrypt and save user data
+      const encryptionKey = deriveMasterKey(password, userWithBalances.crypto_salt);
+      const encryptedUser = encryptData(userWithBalances, encryptionKey);
+      
+      // Update state
+      setUser(userWithBalances);
+      
+      // Save encrypted data
       setTimeout(() => {
         saveUser(email, {
-          ...userToSave,
+          ...userWithBalances,
           encryptedData: encryptedUser
         }).catch(err => console.error("Save error:", err));
       }, 0);

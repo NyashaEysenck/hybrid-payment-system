@@ -35,7 +35,7 @@ router.post('/balance', async (req, res) => {
   }
 });
 
-router.post('/reserve', async (req, res) => {
+router.post('/transfer-to-offline', async (req, res) => {
   try {
     const { email, amount } = req.body; // Retrieve email from body
 
@@ -80,7 +80,7 @@ router.post('/reserve', async (req, res) => {
   }
 });
 
-router.post('/release', async (req, res) => {
+router.post('/transfer-to-online', async (req, res) => {
   try {
     const { email, amount } = req.body; // Retrieve email from body
 
