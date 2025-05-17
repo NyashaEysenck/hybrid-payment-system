@@ -95,7 +95,7 @@ const WebRTCSendMoney: React.FC = () => {
       setAmount('');
     } else {
       const numValue = parseFloat(value);
-      if (!isNaN(numValue) {
+      if (!isNaN(numValue)) {
         setAmount(numValue);
       }
     }
