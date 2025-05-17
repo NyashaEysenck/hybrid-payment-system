@@ -423,7 +423,7 @@ const WebRTCSendMoney: React.FC = () => {
         ...paymentData
       });
       
-      // Wait for receipt confirmation
+      // Wait for receipt
       const receiptTimeout = 30000; // 30 seconds
       const receiptPromise = new Promise<void>((resolve, reject) => {
         const receiptHandler = (message: any) => {

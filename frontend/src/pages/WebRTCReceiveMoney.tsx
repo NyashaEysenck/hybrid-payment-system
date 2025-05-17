@@ -318,53 +318,17 @@ const WebRTCReceiveMoney = () => {
         transactionId: paymentData.transactionId
       });
       
-      // Wait for receipt acknowledgment
-      const ackTimeout = 30000; // 30 seconds
-      const ackPromise = new Promise<void>((resolve, reject) => {
-        const ackHandler = (message: any) => {
-          if (message.type === 'receipt-ack' && 
-              message.receiptId === receiptId && 
-              message.transactionId === paymentData.transactionId) {
-            // Remove handler before resolving/rejecting
-            webrtcService?.offMessage();
-            if (message.status === 'success') {
-              resolve();
-            } else {
-              reject(new Error(message.error || 'Receipt acknowledgment failed'));
-            }
-          }
-        };
-        
-        // Store the handler reference
-        const currentHandler = webrtcService?.getCurrentMessageHandler();
-        
-        // Set the new handler
-        webrtcService?.onMessage(ackHandler);
-        
-        // Clean up on timeout
-        setTimeout(() => {
-          // Restore previous handler if any
-          if (currentHandler) {
-            webrtcService?.onMessage(currentHandler);
-          } else {
-            webrtcService?.offMessage();
-          }
-          reject(new Error('Receipt acknowledgment timeout'));
-        }, ackTimeout);
-      });
-      
-      await ackPromise;
-      
-      // Now that receipt is acknowledged, update transaction to completed
+      // Update transaction status
       const completedTransaction: Transaction = {
         ...pendingTransaction,
         status: 'completed' as const
       };
-      
-      // Update transaction state
       setTransaction(completedTransaction);
+      
+      // Move to complete step
       setStep('complete');
       
+      // Show success toast
       toast({
         title: "Payment Received",
         description: `$${amount.toFixed(2)} received successfully`,
