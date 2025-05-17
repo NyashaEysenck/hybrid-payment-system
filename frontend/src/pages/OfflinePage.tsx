@@ -24,7 +24,7 @@ import { useNavigate } from "react-router-dom";
 const OfflinePage = () => {
   const { balance, fetchWalletData } = useWallet();
   const { offlineBalance, pendingTransactions, refreshOfflineBalance } = useOfflineBalance();
-  const [transferAmount, setTransferAmount] = useState(20);
+  const [transferAmount, setTransferAmount] = useState(0);
   const [isProcessing, setIsProcessing] = useState(false);
   const navigate = useNavigate();
 
@@ -35,10 +35,11 @@ const OfflinePage = () => {
 
   // Update transfer amount when balances change
   useEffect(() => {
-    // Ensure transfer amount is within valid range and has correct precision
+    // Set transfer amount to minimum of current value and available balances
     const newAmount = Math.min(
       Math.max(0, transferAmount), // Ensure non-negative
-      Math.min(maxTransferToOffline, maxTransferToOnline) // Use the smaller of the two max values
+      maxTransferToOffline, // Use max transfer to offline as the limit
+      maxTransferToOnline  // Consider max transfer to online as well
     );
     
     // Round to 2 decimal places
@@ -212,7 +213,7 @@ const OfflinePage = () => {
                 <Slider
                   value={[transferAmount]}
                   min={0}
-                  max={Math.min(500, maxTransferToOffline, maxTransferToOnline)}
+                  max={Math.min(500, maxTransferToOffline)}
                   step={maxTransferToOffline > 50 ? 5 : 1} // Smaller step for smaller balances
                   onValueChange={(value) => {
                     // Round to 2 decimal places
