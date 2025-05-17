@@ -436,12 +436,28 @@ const WebRTCSendMoney: React.FC = () => {
             webrtcService.offMessage();
             
             if (message.status === 'success') {
+              // Update transaction status immediately
+              const completedTransaction: Transaction = {
+                ...pendingTransaction,
+                status: 'completed' as const
+              };
+              setTransaction(completedTransaction);
+              setStep(SendMoneyStep.complete);
+              
               // Restore previous handler if any
               if (currentHandler) {
                 webrtcService.onMessage(currentHandler);
               }
               resolve();
             } else {
+              // Update transaction to failed state
+              const failedTransaction: Transaction = {
+                ...pendingTransaction,
+                status: 'failed' as const
+              };
+              setTransaction(failedTransaction);
+              setStep(SendMoneyStep.input);
+              
               reject(new Error(message.error || 'Receipt failed'));
             }
           }

@@ -8,20 +8,20 @@ import api from '@/utils/api';
 interface OfflineBalanceContextType {
   offlineBalance: number;
   pendingTransactions: number;
-  addToOfflineBalance: (amount: number) => Promise<void>;
-  refreshOfflineBalance: () => Promise<void>;
-  updateOfflineBalance: (amount: number) => Promise<void>;
-  syncOfflineCredits: () => Promise<void>;
+  addToOfflineBalance: (amount: number) => Promise<number>;
+  refreshOfflineBalance: () => Promise<number>;
+  updateOfflineBalance: (amount: number) => Promise<number>;
+  syncOfflineCredits: () => Promise<number>;
   setOfflineBalance: (balance: number) => void;
 }
 
 const OfflineBalanceContext = createContext<OfflineBalanceContextType>({
   offlineBalance: 0,
   pendingTransactions: 0,
-  addToOfflineBalance: async () => {},
-  refreshOfflineBalance: async () => {},
-  updateOfflineBalance: async () => {},
-  syncOfflineCredits: async () => {},
+  addToOfflineBalance: async (amount: number) => amount,
+  refreshOfflineBalance: async () => 0,
+  updateOfflineBalance: async (amount: number) => amount,
+  syncOfflineCredits: async () => 0,
   setOfflineBalance: () => {},
 });
 
@@ -70,9 +70,10 @@ export const OfflineBalanceProvider: React.FC = ({ children }: { children: React
   }, [user?.email, toast]);
 
   const addToOfflineBalance = useCallback(async (amount: number) => {
-    if (!user?.email) return;
+    if (!user?.email) return 0;
     const newBalance = offlineBalance + amount;
     await saveOfflineBalance(newBalance);
+    return newBalance;
   }, [offlineBalance, saveOfflineBalance]);
 
   // Refresh offline balance from the server
@@ -80,19 +81,50 @@ export const OfflineBalanceProvider: React.FC = ({ children }: { children: React
     if (!user?.email) return;
     
     try {
-      const response = await api.post('/wallet/balance', { email: user.email });
-      const backendOfflineBalance = response.data.reserved_Balance || 0;
-      await saveOfflineBalance(backendOfflineBalance);
-      return backendOfflineBalance;
+      // First get the local balance
+      const localBalance = await storageService.getOfflineBalance(user.email);
+      setOfflineBalance(localBalance);
+      
+      // Try to update the backend with our local balance
+      try {
+        const response = await api.post('/wallet/balance', { 
+          email: user.email,
+          offline_balance: localBalance
+        });
+        
+        if (response.data.success) {
+          toast({
+            title: "Success",
+            description: "Offline balance synced with server successfully",
+          });
+        }
+      } catch (error) {
+        console.error('Error syncing offline balance with server:', error);
+        toast({
+          title: "Warning",
+          description: "Could not sync offline balance with server. Using local balance instead.",
+          variant: "destructive",
+        });
+      }
+      
+      return localBalance;
     } catch (error) {
-      console.error('Error refreshing offline balance:', error);
-      // Continue with locally stored balance if server is unavailable
-      return loadOfflineBalance();
+      console.error('Error loading local offline balance:', error);
+      toast({
+        title: "Error",
+        description: "Failed to load offline balance. Please try again later.",
+        variant: "destructive",
+      });
+      throw error;
     }
-  }, [user?.email, saveOfflineBalance, loadOfflineBalance]);
+  }, [user?.email, toast]);
 
   // For backward compatibility
-  const updateOfflineBalance = addToOfflineBalance;
+  const updateOfflineBalance = async (amount: number) => {
+    await addToOfflineBalance(amount);
+    return amount;
+  };
+
 
   // Placeholder for sync functionality
   const syncOfflineCredits = useCallback(async () => {

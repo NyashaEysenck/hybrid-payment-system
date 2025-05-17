@@ -269,6 +269,7 @@ const WebRTCReceiveMoney = () => {
   // Handle payment received
   const handlePaymentReceived = async (paymentData: any) => {
     console.log('Processing payment data:', paymentData);
+    let receiptId = '';
     try {
       // Validate payment data
       if (!paymentData.amount || !paymentData.senderID || !paymentData.transactionId) {
@@ -277,7 +278,7 @@ const WebRTCReceiveMoney = () => {
       }
       
       // Generate receipt ID
-      const receiptId = `receipt-${Date.now()}-${Math.random().toString(36).substring(2, 10)}`;
+      receiptId = `receipt-${Date.now()}-${Math.random().toString(36).substring(2, 10)}`;
       console.log('Generated receipt ID:', receiptId);
       
       // Create transaction object with pending status
@@ -318,6 +319,13 @@ const WebRTCReceiveMoney = () => {
         transactionId: paymentData.transactionId
       });
       
+      // Log receipt details
+      console.log('Sent receipt:', {
+        receiptId: pendingTransaction.receiptId,
+        transactionId: paymentData.transactionId,
+        status: 'success'
+      });
+      
       // Update transaction status
       const completedTransaction: Transaction = {
         ...pendingTransaction,
@@ -350,12 +358,21 @@ const WebRTCReceiveMoney = () => {
       
       // Send error receipt
       try {
+        // Use the same receiptId as the transaction
         await webrtcService?.sendMessage({
           type: 'receipt',
-          receiptId: `error-${Date.now()}`,
-          status: 'error',
+          receiptId,
+          status: 'failed',
           error: errorMessage,
           transactionId: paymentData.transactionId
+        });
+        
+        // Log error receipt details
+        console.log('Sent error receipt:', {
+          receiptId,
+          transactionId: paymentData.transactionId,
+          status: 'failed',
+          error: errorMessage
         });
       } catch (sendError) {
         console.error('Error sending error receipt:', sendError);
