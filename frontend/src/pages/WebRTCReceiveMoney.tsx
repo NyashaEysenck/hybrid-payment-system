@@ -33,7 +33,7 @@ interface Transaction {
 
 const WebRTCReceiveMoney = () => {
   const { user } = useAuth();
-  const { updateOfflineBalance, refreshOfflineBalance } = useOfflineBalance();
+  const { offlineBalance, refreshOfflineBalance } = useOfflineBalance();
   const navigate = useNavigate();
   const { toast } = useToast();
   
@@ -301,7 +301,7 @@ const WebRTCReceiveMoney = () => {
       
       // Update offline balance
       console.log('Updating offline balance by', amount);
-      await updateOfflineBalance(amount);
+      await refreshOfflineBalance();
       
       // Log the result
       console.log('Balance update completed');

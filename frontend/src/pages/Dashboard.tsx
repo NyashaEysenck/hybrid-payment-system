@@ -12,13 +12,14 @@ import {
   ArrowDownLeft, 
   Plus,
   ChevronRight,
-  WifiOff
+  WifiOff,
+  Wifi
 } from "lucide-react";
 
 const Dashboard = () => {
   const navigate = useNavigate();
   const { balance, transactions, fetchWalletData } = useWallet();
-  const { offlineBalance, pendingTransactions, refreshOfflineBalance } = useOfflineBalance();
+  const { offlineBalance, pendingTransactions, refreshOfflineBalance, isOffline, toggleOfflineMode } = useOfflineBalance();
 
   // Refresh balances when component mounts
   useEffect(() => {
@@ -66,6 +67,7 @@ const Dashboard = () => {
                 label="Offline Balance" 
                 size="md" 
                 type="secondary" 
+                icon={isOffline ? <WifiOff size={16} /> : <Wifi size={16} />} 
               />
             </div>
           </div>
@@ -94,6 +96,33 @@ const Dashboard = () => {
               <div className="flex items-center">
                 <p className="text-sm text-gray-500">
                   Transfer funds between your online and offline balances. Offline balance can be used for peer-to-peer payments when you don't have internet access.
+                </p>
+              </div>
+            </div>
+          </div>
+
+          {/* Offline Mode Toggle */}
+          <div className="mb-6 border-t pt-6">
+            <h3 className="font-medium text-dark-light mb-3 flex items-center gap-2">
+              <WifiOff size={18} />
+              {isOffline ? 'Go Online' : 'Go Offline'}
+            </h3>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div className="flex items-center gap-4">
+                <GreenButton 
+                  onClick={toggleOfflineMode}
+                  className="flex items-center gap-2"
+                >
+                  <WifiOff size={16} />
+                  {isOffline ? 'Go Online' : 'Go Offline'}
+                </GreenButton>
+              </div>
+              <div className="flex items-center">
+                <p className="text-sm text-gray-500">
+                  {isOffline ? 
+                    'Your offline balance will be synced with your online balance when you go online.' :
+                    'Your online balance will be copied to your offline balance when you go offline.'
+                  }
                 </p>
               </div>
             </div>

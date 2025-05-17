@@ -8,21 +8,19 @@ import api from '@/utils/api';
 interface OfflineBalanceContextType {
   offlineBalance: number;
   pendingTransactions: number;
-  addToOfflineBalance: (amount: number) => Promise<number>;
+  isOffline: boolean;
+  toggleOfflineMode: () => Promise<void>;
   refreshOfflineBalance: () => Promise<number>;
-  updateOfflineBalance: (amount: number) => Promise<number>;
   syncOfflineCredits: () => Promise<number>;
-  setOfflineBalance: (balance: number) => void;
 }
 
 const OfflineBalanceContext = createContext<OfflineBalanceContextType>({
   offlineBalance: 0,
   pendingTransactions: 0,
-  addToOfflineBalance: async (amount: number) => amount,
+  isOffline: false,
+  toggleOfflineMode: async () => {},
   refreshOfflineBalance: async () => 0,
-  updateOfflineBalance: async (amount: number) => amount,
   syncOfflineCredits: async () => 0,
-  setOfflineBalance: () => {},
 });
 
 export const useOfflineBalance = () => {
@@ -36,6 +34,7 @@ export const useOfflineBalance = () => {
 export const OfflineBalanceProvider: React.FC = ({ children }: { children: React.ReactNode }) => {
   const [offlineBalance, setOfflineBalance] = useState(0);
   const [pendingTransactions, setPendingTransactions] = useState(0);
+  const [isOffline, setIsOffline] = useState(false);
   const { user } = useAuth();
   const { toast } = useToast();
 
@@ -45,8 +44,43 @@ export const OfflineBalanceProvider: React.FC = ({ children }: { children: React
     setOfflineBalance(balance);
   }, [user?.email]);
 
+  const toggleOfflineMode = useCallback(async () => {
+    if (!user?.email) return;
+    
+    try {
+      // Toggle offline mode
+      setIsOffline(!isOffline);
+      
+      // When going offline, copy online balance to offline
+      if (!isOffline) {
+        const onlineBalance = await api.post('/wallet/balance', { email: user.email });
+        const balance = onlineBalance.data.balance || 0;
+        await storageService.saveOfflineBalance(balance, user.email);
+        setOfflineBalance(balance);
+      }
+      
+      toast({
+        title: isOffline ? 'Going online' : 'Going offline',
+        description: isOffline ? 'Your offline balance will be synced with your online balance' : 'Your online balance has been copied to offline'
+      });
+    } catch (error) {
+      console.error('Error toggling offline mode:', error);
+      toast({
+        title: 'Error',
+        description: 'Failed to toggle offline mode',
+        variant: 'destructive'
+      });
+      setIsOffline(false);
+    }
+  }, [user?.email, isOffline]);
+
   useEffect(() => {
     loadOfflineBalance();
+    // Load offline mode state from localStorage
+    const offlineMode = localStorage.getItem('offlineMode');
+    if (offlineMode !== null) {
+      setIsOffline(offlineMode === 'true');
+    }
   }, [loadOfflineBalance]);
 
   const saveOfflineBalance = useCallback(async (balance: number) => {
@@ -144,11 +178,10 @@ export const OfflineBalanceProvider: React.FC = ({ children }: { children: React
       value={{
         offlineBalance,
         pendingTransactions,
-        addToOfflineBalance,
+        isOffline,
         refreshOfflineBalance,
-        updateOfflineBalance,
         syncOfflineCredits,
-        setOfflineBalance: (balance: number) => saveOfflineBalance(balance),
+        toggleOfflineMode
       }}
     >
       {children}

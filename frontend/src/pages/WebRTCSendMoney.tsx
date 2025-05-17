@@ -46,7 +46,7 @@ interface Transaction {
 const WebRTCSendMoney: React.FC = () => {
   const { user } = useAuth();
   const { balance } = useWallet();
-  const { offlineBalance, updateOfflineBalance, refreshOfflineBalance } = useOfflineBalance();
+  const { offlineBalance, refreshOfflineBalance } = useOfflineBalance();
   const navigate = useNavigate();
   const { toast } = useToast();
   
@@ -496,21 +496,33 @@ const WebRTCSendMoney: React.FC = () => {
       };
       
       // Update offline balance
-      const amountToDeduct = -Math.abs(amountNum);
-      await updateOfflineBalance(amountToDeduct);
-      
-      // Refresh balance
-      await refreshOfflineBalance();
+      const handlePaymentSent = async (amount: number) => {
+        try {
+          // Update offline balance
+          await refreshOfflineBalance();
+          
+          // Update transaction status
+          if (transaction) {
+            setTransaction({
+              ...transaction,
+              amount,
+              status: 'completed'
+            });
+          }
+          toast({
+            title: "Payment Sent",
+            description: `$${amountNum.toFixed(2)} sent successfully`,
+            duration: 5000,
+          });
+        } catch (error) {
+          console.error('Error confirming payment:', error);
+        }
+      };
+      handlePaymentSent(amountNum);
       
       // Update transaction state
       setTransaction(completedTransaction);
       setStep(SendMoneyStep.complete);
-      
-      toast({
-        title: "Payment Sent",
-        description: `$${amountNum.toFixed(2)} sent successfully`,
-        duration: 5000,
-      });
     } catch (error) {
       console.error('Error confirming payment:', error);
       const errorMessage = error instanceof Error ? error.message : 'Unknown error';

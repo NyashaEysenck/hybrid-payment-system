@@ -7,6 +7,7 @@ interface BalanceDisplayProps {
   size?: "sm" | "md" | "lg";
   className?: string;
   type?: "primary" | "secondary" | "reserved";
+  icon?: React.ReactNode;
 }
 
 const BalanceDisplay = ({ 
@@ -14,11 +15,15 @@ const BalanceDisplay = ({
   label, 
   size = "md", 
   className,
-  type = "primary" 
+  type = "primary",
+  icon
 }: BalanceDisplayProps) => {
   return (
-    <div className={cn("flex flex-col", className)}>
-      <span className="text-dark-lighter text-sm">{label}</span>
+    <div className={cn("flex flex-col items-center", className)}>
+      <div className="flex items-center gap-2">
+        {icon && <div className="text-dark-lighter">{icon}</div>}
+        <span className="text-dark-lighter text-sm">{label}</span>
+      </div>
       <span
         className={cn("font-semibold", {
           "text-greenleaf-600": type === "primary",
