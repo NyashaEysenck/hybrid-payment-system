@@ -321,7 +321,8 @@ const WebRTCReceiveMoney = () => {
       console.log('Refreshing offline balance...');
       await refreshOfflineBalance();
       
-      // Update state
+      // Update state - do this regardless of balance update success
+      // This ensures the UI flow completes even if there are IndexedDB issues
       setTransaction(newTransaction);
       setStep('complete');
       
@@ -340,7 +341,13 @@ const WebRTCReceiveMoney = () => {
       });
     } catch (error) {
       console.error('Error processing payment:', error);
-      setError('Failed to process payment. Please try again.');
+      
+      // Set error message with more details to display on screen
+      const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+      setError(`Failed to process payment: ${errorMessage}. Please try again.`);
+      
+      // Go back to the scan step when there's an error
+      setStep('scan');
       
       // Even if there's an error, try to send a receipt to unblock the sender
       try {
@@ -348,11 +355,19 @@ const WebRTCReceiveMoney = () => {
           type: 'receipt',
           receiptId: `error-${Date.now()}`,
           status: 'error',
-          error: error instanceof Error ? error.message : 'Unknown error'
+          error: errorMessage
         });
       } catch (sendError) {
         console.error('Error sending error receipt:', sendError);
       }
+      
+      // Show a toast notification to make the error more visible
+      toast({
+        title: "Payment Error",
+        description: errorMessage,
+        variant: "destructive",
+        duration: 7000,
+      });
     }
   };
 

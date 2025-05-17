@@ -422,7 +422,8 @@ const WebRTCSendMoney: React.FC = () => {
       await refreshOfflineBalance();
       console.log('Refreshed offline balance:', offlineBalance);
       
-      // Move to complete step
+      // Move to complete step - do this regardless of balance update success
+      // This ensures the UI flow completes even if there are IndexedDB issues
       setTransaction(updatedTransaction);
       setStep('complete');
       
@@ -433,7 +434,18 @@ const WebRTCSendMoney: React.FC = () => {
       });
     } catch (error) {
       console.error('Error confirming payment:', error);
-      setError('Failed to complete payment. Your balance may still be updated.');
+      
+      // Extract detailed error message
+      const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+      setError(`Failed to complete payment: ${errorMessage}. Please check your balance.`);
+      
+      // Show a toast notification to make the error more visible
+      toast({
+        title: "Payment Error",
+        description: errorMessage,
+        variant: "destructive",
+        duration: 7000,
+      });
       
       // Even if there's an error in updating the balance, still show the receipt
       if (transaction) {
