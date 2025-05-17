@@ -2,15 +2,15 @@
 import { createContext, useContext, useState, ReactNode, useEffect, useCallback } from "react";
 import { useToast } from "@/hooks/use-toast";
 import api from "@/utils/api";
-import { getUser, saveUser, clearUserStorage, WALLET_BALANCE_KEY } from "@/utils/storage";
-import { encryptData, decryptData, deriveMasterKey, generateSalt } from "@/utils/crypto";
+import { getUser, saveUser, clearUserStorage } from "@/utils/storage";
 
 interface User {
   _id: string;
   username: string;
   email: string;
   balance: number; // Online balance
-  crypto_salt?: string;
+  offline_balance: number;
+  // No crypto_salt needed since we're not encrypting
 }
 
 interface AuthContextType {
@@ -82,28 +82,19 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
       const userWithBalances = { 
         ...remoteUser, 
         balance: initialOnlineBalance,
-        offline_balance: initialOfflineBalance,
-        crypto_salt: remoteUser.crypto_salt || generateSalt()
+        offline_balance: initialOfflineBalance
       };
       
       // Save to localStorage
       localStorage.setItem('lastEmail', email);
-      localStorage.setItem(WALLET_BALANCE_KEY, initialOnlineBalance.toString());
       localStorage.setItem('offlineBalance', initialOfflineBalance.toString());
-      
-      // Encrypt and save user data
-      const encryptionKey = deriveMasterKey(password, userWithBalances.crypto_salt);
-      const encryptedUser = encryptData(userWithBalances, encryptionKey);
       
       // Update state
       setUser(userWithBalances);
       
-      // Save encrypted data
+      // Save user data directly
       setTimeout(() => {
-        saveUser(email, {
-          ...userWithBalances,
-          encryptedData: encryptedUser
-        }).catch(err => console.error("Save error:", err));
+        saveUser(email, userWithBalances).catch(err => console.error("Save error:", err));
       }, 0);
       
       toast({ title: "Login successful", description: "Welcome back!" });
@@ -122,27 +113,18 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
   const register = useCallback(async (username: string, email: string, password: string) => {
     setIsLoading(true);
     try {
-      const salt = generateSalt();
       const response = await api.post('/auth/register', { 
         username, 
         email, 
-        password,
-        crypto_salt: salt
+        password
       });
 
       const remoteUser = response.data.user;
-      const encryptionKey = deriveMasterKey(password, salt);
-      const encryptedUser = encryptData(remoteUser, encryptionKey);
-      
-      const userToSave = { ...remoteUser, crypto_salt: salt };
-      setUser(userToSave);
+      setUser(remoteUser);
       localStorage.setItem('lastEmail', email);
       
       setTimeout(() => {
-        saveUser(email, {
-          ...userToSave,
-          encryptedData: encryptedUser
-        }).catch(err => console.error("Save error:", err));
+        saveUser(email, remoteUser).catch(err => console.error("Save error:", err));
       }, 0);
       
       toast({ title: "Registration successful", description: "Your account has been created" });
@@ -159,8 +141,8 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
   }, [toast]);
 
   const logout = useCallback(() => {
-
     localStorage.removeItem('lastEmail');
+    localStorage.removeItem('offlineBalance');
     sessionStorage.removeItem('sessionUser');
     setUser(null);
     toast({ title: "Logged out", description: "You have been signed out" });
