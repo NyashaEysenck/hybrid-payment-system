@@ -290,21 +290,41 @@ const WebRTCSendMoney: React.FC = () => {
       // Set up message handler
       webrtcService!.onMessage((message) => {
         console.log('Received message:', message);
+        
         // Handle receipt message from receiver
         if (message.type === 'receipt') {
           console.log('Receipt received from receiver:', message);
-          // Update transaction with receipt and complete the payment
+          
+          // Update transaction with receipt details
           if (transaction) {
             const updatedTransaction = {
               ...transaction,
               receiptId: message.receiptId,
-              status: 'completed' as const
+              status: message.status === 'success' ? 'completed' as const : 'failed' as const
             };
             setTransaction(updatedTransaction);
             
-            // Call payment confirmation to update balance and complete the process
-            console.log('Receipt received, completing payment process');
-            handlePaymentConfirmation();
+            // If successful receipt, complete the payment flow
+            if (message.status === 'success') {
+              console.log('Success receipt received, completing payment process');
+              
+              // Update offline balance
+              refreshOfflineBalance().then(() => {
+                toast({
+                  title: "Payment Sent",
+                  description: `$${typeof amount === 'number' ? amount.toFixed(2) : '0.00'} sent successfully`,
+                  duration: 5000,
+                });
+              });
+              
+              // Move to completed state
+              setStep(SendMoneyStep.complete);
+            } else {
+              // Payment failed according to receipt
+              console.error('Failed receipt received:', message.error);
+              setError(`Payment failed: ${message.error || 'Unknown error'}`);
+              setStep(SendMoneyStep.input);
+            }
           } else {
             console.error('Receipt received but no transaction found');
           }
@@ -349,15 +369,16 @@ const WebRTCSendMoney: React.FC = () => {
               timestamp: paymentData.timestamp,
               note: note,
               status: 'pending',
-              receiptId: paymentData.transactionId
+              receiptId: '' // Will be filled in when receipt comes back
             };
             
-            // Set transaction only - wait for receipt before confirming
+            // Set transaction and call payment confirmation
             setTransaction(newTransaction);
+            handlePaymentConfirmation();
           }, 1000);
         } else if (state === 'failed' || state === 'disconnected' || state === 'closed') {
           console.log('WebRTC connection lost:', state);
-          if (step !== 'complete') {
+          if (step !== SendMoneyStep.complete) {
             setError('Connection lost. Please try again.');
             setStep(SendMoneyStep.createOffer);
           }
@@ -390,7 +411,7 @@ const WebRTCSendMoney: React.FC = () => {
     }
     
     // Prevent duplicate confirmations
-    if (step === 'complete') {
+    if (step === SendMoneyStep.complete) {
       console.log('Payment already completed, skipping confirmation');
       return;
     }
@@ -423,96 +444,22 @@ const WebRTCSendMoney: React.FC = () => {
         ...paymentData
       });
       
-      // Wait for receipt
-      const receiptTimeout = 30000; // 30 seconds
-      const receiptPromise = new Promise<void>((resolve, reject) => {
-        // Modify the receiptHandler to look for the correct structure:
-      const receiptHandler = (message: any) => {
-        if (message.type === 'receipt' && 
-            message.transactionId === transaction.id) {
-          // Remove handler before resolving
-          webrtcService.offMessage();
-          
-          if (message.status === 'success') {
-            // Update transaction and complete
-            const completedTransaction: Transaction = {
-              ...pendingTransaction,
-              status: 'completed',
-              receiptId: message.receiptId // Make sure this matches
-            };
-            setTransaction(completedTransaction);
-            setStep(SendMoneyStep.complete);
-            resolve();
-          } else {
-            reject(new Error(message.error || 'Receipt failed'));
-          }
+      // The receipt will be handled by the message handler setup in processAnswerData
+      console.log('Payment sent, waiting for receipt...');
+      setStep(SendMoneyStep.waitForReceipt);
+      
+      // Set up a timeout in case receipt never arrives
+      setTimeout(() => {
+        if (step === SendMoneyStep.waitForReceipt) {
+          setError("Receipt timeout. The payment may have been completed but the confirmation was not received.");
+          // Don't reset to input - let user check with recipient instead
         }
-      };
-        
-        // Store current handler
-        const currentHandler = webrtcService.getCurrentMessageHandler();
-        
-        // Set the new handler
-        webrtcService.onMessage(receiptHandler);
-        
-        // Clean up on timeout
-        setTimeout(() => {
-          // Restore previous handler if any
-          if (currentHandler) {
-            webrtcService.onMessage(currentHandler);
-          } else {
-            webrtcService.offMessage();
-          }
-          reject(new Error('Receipt timeout'));
-        }, receiptTimeout);
-      });
+      }, 30000);  // 30 seconds timeout
       
-      await receiptPromise;
-      
-      // Now that receipt is confirmed, update transaction and balance
-      const amountNum = Number(amount);
-      if (isNaN(amountNum) || amountNum <= 0) {
-        throw new Error('Invalid payment amount');
-      }
-      
-      // Update transaction status
-      const completedTransaction: Transaction = {
-        ...pendingTransaction,
-        status: 'completed' as const
-      };
-      
-      // Update offline balance
-      const handlePaymentSent = async (amount: number) => {
-        try {
-          // Update offline balance
-          await refreshOfflineBalance();
-          
-          // Update transaction status
-          if (transaction) {
-            setTransaction({
-              ...transaction,
-              amount,
-              status: 'completed'
-            });
-          }
-          toast({
-            title: "Payment Sent",
-            description: `$${amountNum.toFixed(2)} sent successfully`,
-            duration: 5000,
-          });
-        } catch (error) {
-          console.error('Error confirming payment:', error);
-        }
-      };
-      handlePaymentSent(amountNum);
-      
-      // Update transaction state
-      setTransaction(completedTransaction);
-      setStep(SendMoneyStep.complete);
     } catch (error) {
-      console.error('Error confirming payment:', error);
+      console.error('Error sending payment:', error);
       const errorMessage = error instanceof Error ? error.message : 'Unknown error';
-      setError(`Failed to complete payment: ${errorMessage}. Please check your balance.`);
+      setError(`Failed to send payment: ${errorMessage}`);
       
       // Update transaction to failed state
       if (transaction) {
@@ -536,7 +483,7 @@ const WebRTCSendMoney: React.FC = () => {
       resetForm();
     }
   };
-
+  
   // Reset the form and go back to input step
   const resetForm = () => {
     setAmount('');
