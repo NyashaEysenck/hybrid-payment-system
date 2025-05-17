@@ -27,7 +27,7 @@ interface Transaction {
   sender: string;
   timestamp: number;
   note?: string;
-  status: 'completed';
+  status: 'pending' | 'completed' | 'failed';
   receiptId: string;
 }
 
@@ -280,11 +280,11 @@ const WebRTCReceiveMoney = () => {
       const receiptId = `receipt-${Date.now()}-${Math.random().toString(36).substring(2, 10)}`;
       console.log('Generated receipt ID:', receiptId);
       
-      // Create transaction object
+      // Create transaction object with pending status
       const amount = Number(paymentData.amount);
       console.log('Payment amount:', amount);
       
-      const newTransaction: Transaction = {
+      const pendingTransaction: Transaction = {
         id: paymentData.transactionId,
         type: 'receive',
         amount: amount,
@@ -292,8 +292,11 @@ const WebRTCReceiveMoney = () => {
         timestamp: paymentData.timestamp || Date.now(),
         note: paymentData.note,
         receiptId,
-        status: 'completed'
+        status: 'pending' as const
       };
+      
+      // Update transaction state
+      setTransaction(pendingTransaction);
       
       // Update offline balance
       console.log('Updating offline balance by', amount);
@@ -306,18 +309,61 @@ const WebRTCReceiveMoney = () => {
       console.log('Refreshing offline balance...');
       await refreshOfflineBalance();
       
-      // Update state - do this regardless of balance update success
-      // This ensures the UI flow completes even if there are IndexedDB issues
-      setTransaction(newTransaction);
-      setStep('complete');
-      
-      // Send receipt back to sender AFTER updating our state
+      // Send receipt to sender
       console.log('Sending receipt to sender...');
-      webrtcService?.sendMessage({
+      await webrtcService?.sendMessage({
         type: 'receipt',
         receiptId,
-        status: 'success'
+        status: 'success',
+        transactionId: paymentData.transactionId
       });
+      
+      // Wait for receipt acknowledgment
+      const ackTimeout = 30000; // 30 seconds
+      const ackPromise = new Promise<void>((resolve, reject) => {
+        const ackHandler = (message: any) => {
+          if (message.type === 'receipt-ack' && 
+              message.receiptId === receiptId && 
+              message.transactionId === paymentData.transactionId) {
+            // Remove handler before resolving/rejecting
+            webrtcService?.offMessage();
+            if (message.status === 'success') {
+              resolve();
+            } else {
+              reject(new Error(message.error || 'Receipt acknowledgment failed'));
+            }
+          }
+        };
+        
+        // Store the handler reference
+        const currentHandler = webrtcService?.getCurrentMessageHandler();
+        
+        // Set the new handler
+        webrtcService?.onMessage(ackHandler);
+        
+        // Clean up on timeout
+        setTimeout(() => {
+          // Restore previous handler if any
+          if (currentHandler) {
+            webrtcService?.onMessage(currentHandler);
+          } else {
+            webrtcService?.offMessage();
+          }
+          reject(new Error('Receipt acknowledgment timeout'));
+        }, ackTimeout);
+      });
+      
+      await ackPromise;
+      
+      // Now that receipt is acknowledged, update transaction to completed
+      const completedTransaction: Transaction = {
+        ...pendingTransaction,
+        status: 'completed' as const
+      };
+      
+      // Update transaction state
+      setTransaction(completedTransaction);
+      setStep('complete');
       
       toast({
         title: "Payment Received",
@@ -326,33 +372,41 @@ const WebRTCReceiveMoney = () => {
       });
     } catch (error) {
       console.error('Error processing payment:', error);
-      
-      // Set error message with more details to display on screen
       const errorMessage = error instanceof Error ? error.message : 'Unknown error';
-      setError(`Failed to process payment: ${errorMessage}. Please try again.`);
+      setError(`Payment failed: ${errorMessage}`);
       
-      // Go back to the scan step when there's an error
-      setStep('scan');
+      // Update transaction to failed state
+      if (transaction) {
+        const failedTransaction: Transaction = {
+          ...transaction,
+          status: 'failed' as const
+        };
+        setTransaction(failedTransaction);
+      }
       
-      // Even if there's an error, try to send a receipt to unblock the sender
+      // Send error receipt
       try {
-        webrtcService?.sendMessage({
+        await webrtcService?.sendMessage({
           type: 'receipt',
           receiptId: `error-${Date.now()}`,
           status: 'error',
-          error: errorMessage
+          error: errorMessage,
+          transactionId: paymentData.transactionId
         });
       } catch (sendError) {
         console.error('Error sending error receipt:', sendError);
       }
       
-      // Show a toast notification to make the error more visible
+      // Show error toast
       toast({
         title: "Payment Error",
         description: errorMessage,
         variant: "destructive",
         duration: 7000,
       });
+      
+      // Reset to previous step
+      setStep('waitForPayment');
     }
   };
 

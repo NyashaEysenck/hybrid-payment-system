@@ -172,6 +172,21 @@ export class WebRTCService {
   }
 
   /**
+   * Remove the message handler
+   */
+  offMessage(): void {
+    this.onMessageCallback = null;
+  }
+
+  /**
+   * Get the current message handler
+   * @returns The current message handler function
+   */
+  getCurrentMessageHandler(): MessageHandler | null {
+    return this.onMessageCallback;
+  }
+
+  /**
    * Set a callback to handle connection state changes
    * @param callback The function to call when the connection state changes
    */

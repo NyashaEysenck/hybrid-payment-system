@@ -22,7 +22,14 @@ import createWebRTCService, { WebRTCConnectionData } from '@/services/WebRTCServ
 import { encodeConnectionData, decodeConnectionData, splitConnectionData, joinConnectionData } from '@/utils/qrCodeUtils';
 
 // Steps in the send money process
-type SendMoneyStep = 'input' | 'createOffer' | 'waitForAnswer' | 'sending' | 'complete';
+enum SendMoneyStep {
+  input = 'input',
+  createOffer = 'createOffer',
+  waitForAnswer = 'waitForAnswer',
+  waitForReceipt = 'waitForReceipt',
+  sending = 'sending',
+  complete = 'complete'
+};
 
 // Transaction type
 interface Transaction {
@@ -44,7 +51,7 @@ const WebRTCSendMoney: React.FC = () => {
   const { toast } = useToast();
   
   // State variables
-  const [step, setStep] = useState<SendMoneyStep>('input');
+  const [step, setStep] = useState<SendMoneyStep>(SendMoneyStep.input);
   const [amount, setAmount] = useState<number | ''>('');
   const [recipientId, setRecipientId] = useState('');
   const [note, setNote] = useState('');
@@ -163,14 +170,16 @@ const WebRTCSendMoney: React.FC = () => {
         }
         
         // Move to next step - using createOffer instead of waitForAnswer since that's where the QR code is displayed
-        setStep('createOffer');
+        setStep(SendMoneyStep.createOffer);
       } catch (encodeError) {
         console.error('Error encoding offer data:', encodeError);
         setError('Failed to encode connection data. The offer might be too large.');
+        setStep(SendMoneyStep.input);
       }
     } catch (err) {
       console.error('Error creating offer:', err);
       setError('Failed to create connection offer. Please try again.');
+      setStep(SendMoneyStep.input);
     } finally {
       setLoading(false);
     }
@@ -247,6 +256,7 @@ const WebRTCSendMoney: React.FC = () => {
       console.error('Error processing QR code:', err);
       setError(`Failed to process QR code: ${err instanceof Error ? err.message : 'Unknown error'}`);
       setShowScanner(false);
+      setStep(SendMoneyStep.createOffer);
     }
   };
   
@@ -312,7 +322,7 @@ const WebRTCSendMoney: React.FC = () => {
             description: "Connected to receiver device",
             duration: 3000,
           });
-          setStep('sending');
+          setStep(SendMoneyStep.sending);
           
           // Create and send payment data
           setTimeout(() => {
@@ -349,17 +359,17 @@ const WebRTCSendMoney: React.FC = () => {
           console.log('WebRTC connection lost:', state);
           if (step !== 'complete') {
             setError('Connection lost. Please try again.');
-            setStep('createOffer');
+            setStep(SendMoneyStep.createOffer);
           }
         }
       });
       
       // Move to next step
-      setStep('waitForAnswer');
+      setStep(SendMoneyStep.waitForAnswer);
     } catch (err) {
       console.error('Error processing answer data:', err);
       setError(`Failed to process answer data: ${err instanceof Error ? err.message : 'Unknown error'}`);
-      setStep('createOffer');
+      setStep(SendMoneyStep.createOffer);
       
       // Reset chunk state
       setScannedChunks([]);
@@ -389,35 +399,96 @@ const WebRTCSendMoney: React.FC = () => {
       console.log('Confirming payment of', amount);
       console.log('Current offline balance:', offlineBalance);
       
-      // Update transaction status
-      const updatedTransaction: Transaction = {
+      // Update transaction status to pending
+      const pendingTransaction: Transaction = {
         ...transaction,
-        status: 'completed' as const
+        status: 'pending' as const
       };
       
+      // Update transaction state
+      setTransaction(pendingTransaction);
       
-      // Update offline balance - IMPORTANT: Convert to number and ensure it's negative
+      // Send payment message to receiver
+      const paymentData = {
+        amount: amount,
+        senderID: user?.email || '',
+        transactionId: transaction.id,
+        timestamp: transaction.timestamp,
+        note: transaction.note
+      };
+      
+      console.log('Sending payment data:', paymentData);
+      await webrtcService.sendMessage({
+        type: 'payment',
+        ...paymentData
+      });
+      
+      // Wait for receipt confirmation
+      const receiptTimeout = 30000; // 30 seconds
+      const receiptPromise = new Promise<void>((resolve, reject) => {
+        const receiptHandler = (message: any) => {
+          if (message.type === 'receipt' && 
+              message.transactionId === transaction.id) {
+            // Store current handler
+            const currentHandler = webrtcService.getCurrentMessageHandler();
+            
+            // Remove handler before resolving/rejecting
+            webrtcService.offMessage();
+            
+            if (message.status === 'success') {
+              // Restore previous handler if any
+              if (currentHandler) {
+                webrtcService.onMessage(currentHandler);
+              }
+              resolve();
+            } else {
+              reject(new Error(message.error || 'Receipt failed'));
+            }
+          }
+        };
+        
+        // Store current handler
+        const currentHandler = webrtcService.getCurrentMessageHandler();
+        
+        // Set the new handler
+        webrtcService.onMessage(receiptHandler);
+        
+        // Clean up on timeout
+        setTimeout(() => {
+          // Restore previous handler if any
+          if (currentHandler) {
+            webrtcService.onMessage(currentHandler);
+          } else {
+            webrtcService.offMessage();
+          }
+          reject(new Error('Receipt timeout'));
+        }, receiptTimeout);
+      });
+      
+      await receiptPromise;
+      
+      // Now that receipt is confirmed, update transaction and balance
       const amountNum = Number(amount);
       if (isNaN(amountNum) || amountNum <= 0) {
-        console.error('Invalid amount for payment:', amount);
         throw new Error('Invalid payment amount');
       }
       
-      console.log('Updating offline balance by -', amountNum);
+      // Update transaction status
+      const completedTransaction: Transaction = {
+        ...pendingTransaction,
+        status: 'completed' as const
+      };
       
-      // Force a negative amount to subtract from balance
+      // Update offline balance
       const amountToDeduct = -Math.abs(amountNum);
       await updateOfflineBalance(amountToDeduct);
-      console.log('Balance update completed with amount:', amountToDeduct);
       
-      // Refresh the offline balance to ensure consistency
+      // Refresh balance
       await refreshOfflineBalance();
-      console.log('Refreshed offline balance:', offlineBalance);
       
-      // Move to complete step - do this regardless of balance update success
-      // This ensures the UI flow completes even if there are IndexedDB issues
-      setTransaction(updatedTransaction);
-      setStep('complete');
+      // Update transaction state
+      setTransaction(completedTransaction);
+      setStep(SendMoneyStep.complete);
       
       toast({
         title: "Payment Sent",
@@ -426,12 +497,19 @@ const WebRTCSendMoney: React.FC = () => {
       });
     } catch (error) {
       console.error('Error confirming payment:', error);
-      
-      // Extract detailed error message
       const errorMessage = error instanceof Error ? error.message : 'Unknown error';
       setError(`Failed to complete payment: ${errorMessage}. Please check your balance.`);
       
-      // Show a toast notification to make the error more visible
+      // Update transaction to failed state
+      if (transaction) {
+        const failedTransaction: Transaction = {
+          ...transaction,
+          status: 'failed' as const
+        };
+        setTransaction(failedTransaction);
+      }
+      
+      // Show error toast
       toast({
         title: "Payment Error",
         description: errorMessage,
@@ -439,11 +517,8 @@ const WebRTCSendMoney: React.FC = () => {
         duration: 7000,
       });
       
-      // Even if there's an error in updating the balance, still show the receipt
-      if (transaction) {
-        // Use type assertion to fix TypeScript error
-        setStep('complete' as SendMoneyStep);
-      }
+      // Reset to previous step
+      setStep(SendMoneyStep.waitForReceipt);
     }
   };
 
@@ -457,7 +532,7 @@ const WebRTCSendMoney: React.FC = () => {
     setOfferQrDataChunks([]);
     setCurrentQrChunkIndex(0);
     setTransaction(null);
-    setStep('input');
+    setStep(SendMoneyStep.input);
     
     // Reset chunk state
     setScannedChunks([]);
