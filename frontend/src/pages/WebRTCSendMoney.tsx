@@ -426,42 +426,28 @@ const WebRTCSendMoney: React.FC = () => {
       // Wait for receipt
       const receiptTimeout = 30000; // 30 seconds
       const receiptPromise = new Promise<void>((resolve, reject) => {
-        const receiptHandler = (message: any) => {
-          if (message.type === 'receipt' && 
-              message.transactionId === transaction.id) {
-            // Store current handler
-            const currentHandler = webrtcService.getCurrentMessageHandler();
-            
-            // Remove handler before resolving/rejecting
-            webrtcService.offMessage();
-            
-            if (message.status === 'success') {
-              // Update transaction status immediately
-              const completedTransaction: Transaction = {
-                ...pendingTransaction,
-                status: 'completed' as const
-              };
-              setTransaction(completedTransaction);
-              setStep(SendMoneyStep.complete);
-              
-              // Restore previous handler if any
-              if (currentHandler) {
-                webrtcService.onMessage(currentHandler);
-              }
-              resolve();
-            } else {
-              // Update transaction to failed state
-              const failedTransaction: Transaction = {
-                ...pendingTransaction,
-                status: 'failed' as const
-              };
-              setTransaction(failedTransaction);
-              setStep(SendMoneyStep.input);
-              
-              reject(new Error(message.error || 'Receipt failed'));
-            }
+        // Modify the receiptHandler to look for the correct structure:
+      const receiptHandler = (message: any) => {
+        if (message.type === 'receipt' && 
+            message.transactionId === transaction.id) {
+          // Remove handler before resolving
+          webrtcService.offMessage();
+          
+          if (message.status === 'success') {
+            // Update transaction and complete
+            const completedTransaction: Transaction = {
+              ...pendingTransaction,
+              status: 'completed',
+              receiptId: message.receiptId // Make sure this matches
+            };
+            setTransaction(completedTransaction);
+            setStep(SendMoneyStep.complete);
+            resolve();
+          } else {
+            reject(new Error(message.error || 'Receipt failed'));
           }
-        };
+        }
+      };
         
         // Store current handler
         const currentHandler = webrtcService.getCurrentMessageHandler();

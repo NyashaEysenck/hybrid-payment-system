@@ -314,9 +314,9 @@ const WebRTCReceiveMoney = () => {
       console.log('Sending receipt to sender...');
       await webrtcService?.sendMessage({
         type: 'receipt',
-        receiptId,
-        status: 'success',
-        transactionId: paymentData.transactionId
+        receiptId: receiptId,  // Make sure this matches sender's expectation
+        transactionId: paymentData.transactionId,
+        status: 'success'
       });
       
       // Log receipt details
@@ -361,7 +361,7 @@ const WebRTCReceiveMoney = () => {
         // Use the same receiptId as the transaction
         await webrtcService?.sendMessage({
           type: 'receipt',
-          receiptId,
+          receiptId: receiptId,
           status: 'failed',
           error: errorMessage,
           transactionId: paymentData.transactionId
