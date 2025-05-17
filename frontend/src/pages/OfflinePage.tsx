@@ -28,27 +28,27 @@ const OfflinePage = () => {
   const [isProcessing, setIsProcessing] = useState(false);
   const navigate = useNavigate();
 
-  // Calculate available balance
+  // Calculate available balance with precision
   const onlineBalance = balance;
-  const maxTransferToOffline = onlineBalance > 0 ? onlineBalance : 0;
-  const maxTransferToOnline = offlineBalance > 0 ? offlineBalance : 0;
+  const maxTransferToOffline = Math.min(500, onlineBalance > 0 ? Math.floor(onlineBalance * 100) / 100 : 0);
+  const maxTransferToOnline = Math.min(500, offlineBalance > 0 ? Math.floor(offlineBalance * 100) / 100 : 0);
 
-  // Fetch wallet data when component mounts
+  // Update transfer amount when balances change
   useEffect(() => {
-    console.log('OfflinePage: Fetching wallet data...');
-    fetchWalletData();
-    refreshOfflineBalance();
-  }, [fetchWalletData, refreshOfflineBalance]);
-  
-  // Update transfer amount when balances change to ensure it's valid
-  useEffect(() => {
-    // Set transfer amount to the minimum of current value, max transfer to offline, and 20
-    const maxAmount = Math.min(20, maxTransferToOffline);
-    if (maxAmount < transferAmount) {
-      console.log(`Adjusting transfer amount from ${transferAmount} to ${maxAmount} based on available balance`);
-      setTransferAmount(maxAmount > 0 ? maxAmount : 0);
+    // Ensure transfer amount is within valid range and has correct precision
+    const newAmount = Math.min(
+      Math.max(0, transferAmount), // Ensure non-negative
+      Math.min(maxTransferToOffline, maxTransferToOnline) // Use the smaller of the two max values
+    );
+    
+    // Round to 2 decimal places
+    const roundedAmount = Math.floor(newAmount * 100) / 100;
+    
+    if (roundedAmount !== transferAmount) {
+      console.log(`Adjusting transfer amount from ${transferAmount} to ${roundedAmount} based on available balance`);
+      setTransferAmount(roundedAmount);
     }
-  }, [onlineBalance, offlineBalance, maxTransferToOffline, transferAmount]);
+  }, [onlineBalance, offlineBalance, transferAmount]);
 
   // Function to reset IndexedDB databases
   const resetDatabases = useCallback(async () => {
@@ -211,15 +211,20 @@ const OfflinePage = () => {
                 <Label className="text-dark">Amount to Transfer</Label>
                 <Slider
                   value={[transferAmount]}
-                  max={Math.max(500, maxTransferToOffline, maxTransferToOnline)}
-                  step={5}
-                  onValueChange={(value) => setTransferAmount(value[0])}
+                  min={0}
+                  max={Math.min(500, maxTransferToOffline, maxTransferToOnline)}
+                  step={maxTransferToOffline > 50 ? 5 : 1} // Smaller step for smaller balances
+                  onValueChange={(value) => {
+                    // Round to 2 decimal places
+                    const roundedValue = Math.floor(value[0] * 100) / 100;
+                    setTransferAmount(roundedValue);
+                  }}
                   className="py-4"
                 />
                 <div className="flex justify-between text-sm text-dark-lighter">
                   <span>$0</span>
                   <span>${transferAmount.toFixed(2)}</span>
-                  <span>$500</span>
+                  <span>${Math.min(500, maxTransferToOffline, maxTransferToOnline).toFixed(2)}</span>
                 </div>
               </div>
 

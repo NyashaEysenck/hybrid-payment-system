@@ -89,7 +89,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
       // Save to localStorage
       localStorage.setItem('lastEmail', email);
       localStorage.setItem(WALLET_BALANCE_KEY, initialOnlineBalance.toString());
-      localStorage.setItem('offline-balance', initialOfflineBalance.toString());
+      localStorage.setItem('offlineBalance', initialOfflineBalance.toString());
       
       // Encrypt and save user data
       const encryptionKey = deriveMasterKey(password, userWithBalances.crypto_salt);
