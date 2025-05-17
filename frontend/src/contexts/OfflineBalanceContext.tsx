@@ -12,6 +12,7 @@ interface OfflineBalanceContextType {
   toggleOfflineMode: () => Promise<void>;
   refreshOfflineBalance: () => Promise<number>;
   syncOfflineCredits: () => Promise<number>;
+  addToOfflineBalance: (amount: number) => Promise<number>;
 }
 
 const OfflineBalanceContext = createContext<OfflineBalanceContextType>({
@@ -21,6 +22,7 @@ const OfflineBalanceContext = createContext<OfflineBalanceContextType>({
   toggleOfflineMode: async () => {},
   refreshOfflineBalance: async () => 0,
   syncOfflineCredits: async () => 0,
+  addToOfflineBalance: async () => 0,
 });
 
 export const useOfflineBalance = () => {
@@ -159,7 +161,6 @@ export const OfflineBalanceProvider: React.FC = ({ children }: { children: React
     return amount;
   };
 
-
   // Placeholder for sync functionality
   const syncOfflineCredits = useCallback(async () => {
     // This would sync with the server if needed
@@ -181,7 +182,8 @@ export const OfflineBalanceProvider: React.FC = ({ children }: { children: React
         isOffline,
         refreshOfflineBalance,
         syncOfflineCredits,
-        toggleOfflineMode
+        toggleOfflineMode,
+        addToOfflineBalance
       }}
     >
       {children}
