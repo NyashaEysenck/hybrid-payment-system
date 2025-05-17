@@ -4,7 +4,6 @@ import WhiteCard from "@/components/WhiteCard";
 import { useAuth } from '@/contexts/AuthContext';
 import { useOfflineBalance } from '@/contexts/OfflineBalanceContext';
 import { useNavigate } from 'react-router-dom';
-import { useIndexedDB } from '@/hooks/useIndexedDB';
 import QRCode from 'react-qr-code';
 import QrScanner from '@/components/QRScanner';
 import { Button } from "@/components/ui/button";
@@ -54,11 +53,7 @@ const WebRTCReceiveMoney = () => {
   const [totalChunksExpected, setTotalChunksExpected] = useState<number | null>(null);
   const [isMultiChunkMode, setIsMultiChunkMode] = useState(false);
   
-  // IndexedDB hook for storing transactions
-  const { addItem } = useIndexedDB({
-    dbName: 'offline-payments',
-    storeName: 'offline-transactions'
-  });
+  // We no longer need to initialize IndexedDB as we're using the context directly
 
   // Initialize WebRTC service when component mounts
   useEffect(() => {
@@ -299,16 +294,6 @@ const WebRTCReceiveMoney = () => {
         receiptId,
         status: 'completed'
       };
-      
-      // Save transaction to IndexedDB
-      console.log('Saving transaction to IndexedDB...');
-      try {
-        await addItem<Transaction>(newTransaction);
-        console.log('Transaction saved successfully');
-      } catch (dbError) {
-        console.error('Error saving transaction to IndexedDB:', dbError);
-        // Continue even if saving to DB fails
-      }
       
       // Update offline balance
       console.log('Updating offline balance by', amount);

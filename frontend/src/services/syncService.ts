@@ -1,6 +1,6 @@
 // services/syncService.ts
 import api from '@/utils/api';
-import { Transaction } from '@/hooks/useIndexedDB';
+import { Transaction } from '@/types';
 import { toast } from '@/components/ui/use-toast';
 
 /**
@@ -42,16 +42,24 @@ export const syncOfflineTransactions = async (
         
         if (checkResponse.data.status === 'completed') {
           // If it's completed, we can safely delete it from local storage
-          await deleteTransaction(transaction.id);
+          const storedTransactions = JSON.parse(localStorage.getItem('offline-transactions') || '[]');
+          const updatedTransactions = storedTransactions.filter(tx => tx.id !== transaction.id);
+          localStorage.setItem('offline-transactions', JSON.stringify(updatedTransactions));
           synced++;
         } else if (checkResponse.data.status === 'pending') {
           // If it's pending, we need to keep it locally but mark as synced
+          const storedTransactions = JSON.parse(localStorage.getItem('offline-transactions') || '[]');
           const updatedTransaction = {
             ...transaction,
             status: 'pending' as const,
             synced: true
           };
-          await updateTransaction(updatedTransaction);
+          
+          const updatedTransactions = storedTransactions.map(tx => 
+            tx.id === transaction.id ? updatedTransaction : tx
+          );
+          
+          localStorage.setItem('offline-transactions', JSON.stringify(updatedTransactions));
           pending++;
         }
       } else {
@@ -65,12 +73,18 @@ export const syncOfflineTransactions = async (
         
         if (syncResponse.status === 201) {
           // Successfully synced to online database as pending
+          const storedTransactions = JSON.parse(localStorage.getItem('offline-transactions') || '[]');
           const updatedTransaction = {
             ...transaction,
             status: 'pending' as const,
             synced: true
           };
-          await updateTransaction(updatedTransaction);
+          
+          const updatedTransactions = storedTransactions.map(tx => 
+            tx.id === transaction.id ? updatedTransaction : tx
+          );
+          
+          localStorage.setItem('offline-transactions', JSON.stringify(updatedTransactions));
           pending++;
         } else {
           // Something went wrong, keep as is

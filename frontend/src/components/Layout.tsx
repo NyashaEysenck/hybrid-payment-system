@@ -3,7 +3,7 @@ import { useLocation, Link } from "react-router-dom";
 import { Menu, X, Home, Send, Download, CreditCard, Settings, LogOut, WifiOff, Wifi, ChevronLeft, ChevronRight, ToggleLeft } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
-import { useIndexedDB } from "@/hooks/useIndexedDB";
+// No longer needed as we're using localStorage directly
 import { useOfflineBalance } from "@/contexts/OfflineBalanceContext";
 import { useWallet } from "@/contexts/WalletContext";
 import { toast } from "@/components/ui/use-toast";
@@ -28,11 +28,7 @@ const Layout = ({ children }: LayoutProps) => {
   const { refreshOfflineBalance, updateOfflineBalance } = useOfflineBalance();
   const { reservedBalance } = useWallet();
   
-  // Initialize IndexedDB for transaction syncing
-  const indexedDB = useIndexedDB({
-    dbName: 'offline-payments',
-    storeName: 'offline-transactions'
-  });
+  // We no longer need IndexedDB as we're using the context directly
 
   // Toggle sidebar collapsed state and persist it
   const toggleSidebarCollapsed = useCallback(() => {

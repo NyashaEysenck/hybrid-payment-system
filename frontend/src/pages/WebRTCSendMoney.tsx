@@ -5,7 +5,6 @@ import { useAuth } from '@/contexts/AuthContext';
 import { useWallet } from '@/contexts/WalletContext';
 import { useOfflineBalance } from '@/contexts/OfflineBalanceContext';
 import { useNavigate } from 'react-router-dom';
-import { useIndexedDB } from '@/hooks/useIndexedDB';
 import QRCode from 'react-qr-code';
 import QrScanner from '@/components/QRScanner';
 import { Button } from "@/components/ui/button";
@@ -63,11 +62,7 @@ const WebRTCSendMoney: React.FC = () => {
   const [totalChunksExpected, setTotalChunksExpected] = useState<number | null>(null);
   const [isMultiChunkMode, setIsMultiChunkMode] = useState(false);
   
-  // IndexedDB hook for storing transactions
-  const { addItem } = useIndexedDB({
-    dbName: 'offline-payments',
-    storeName: 'offline-transactions'
-  });
+  // We no longer need to initialize IndexedDB as we're using the context directly
 
   // Initialize WebRTC service when component mounts
   useEffect(() => {
@@ -400,9 +395,6 @@ const WebRTCSendMoney: React.FC = () => {
         status: 'completed' as const
       };
       
-      // Save transaction to IndexedDB
-      await addItem(updatedTransaction);
-      console.log('Transaction saved to IndexedDB:', updatedTransaction);
       
       // Update offline balance - IMPORTANT: Convert to number and ensure it's negative
       const amountNum = Number(amount);
