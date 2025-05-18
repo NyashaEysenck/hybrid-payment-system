@@ -52,6 +52,9 @@ export const OfflineBalanceProvider: React.FC = ({ children }: { children: React
     try {
       // Toggle offline mode
       setIsOffline(!isOffline);
+      // Save the new state to storage 
+      localStorage.setItem('offlineMode', (!isOffline).toString());
+
       
       // When going offline, copy online balance to offline
       if (!isOffline) {
