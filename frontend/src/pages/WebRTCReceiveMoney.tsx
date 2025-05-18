@@ -24,10 +24,12 @@ interface Transaction {
   type: 'receive';
   amount: number;
   sender: string;
+  recipient: string;
   timestamp: number;
   note?: string;
   status: 'pending' | 'completed' | 'failed';
   receiptId: string;
+  synced?: boolean;
 }
 
 const WebRTCReceiveMoney = () => {
@@ -253,15 +255,17 @@ const WebRTCReceiveMoney = () => {
       const amount = Number(paymentData.amount);
       console.log('Payment amount:', amount);
 
-      pendingTransaction = {
-        id: paymentData.transactionId,
+      const pendingTransaction: Transaction = {
+        id: receiptId,
         type: 'receive',
         amount: amount,
-        sender: paymentData.senderID,
+        sender: paymentData.senderID || paymentData.sender || 'unknown',
+        recipient: user?.email || 'unknown',
         timestamp: paymentData.timestamp || Date.now(),
         note: paymentData.note,
         receiptId,
-        status: 'pending' as const
+        status: 'pending' as const,
+        synced: false
       };
       setTransaction(pendingTransaction);
       await storageService.saveTransaction(pendingTransaction); // Save pending transaction

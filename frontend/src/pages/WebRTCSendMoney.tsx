@@ -36,11 +36,13 @@ interface Transaction {
   id: string;
   type: 'send';
   amount: number;
+  sender: string;
   recipient: string;
   timestamp: number;
   note?: string;
   status: 'pending' | 'completed' | 'failed';
   receiptId: string;
+  synced?: boolean;
 }
 
 const WebRTCSendMoney: React.FC = () => {
@@ -305,11 +307,13 @@ const WebRTCSendMoney: React.FC = () => {
               id: currentTransactionId,
               type: 'send',
               amount: Number(amount),
+              sender: user?.email || 'unknown',
               recipient: answerData.senderID || recipientId || 'unknown',
               timestamp: paymentData.timestamp,
               note: note,
-              status: 'pending',
-              receiptId: ''
+              status: 'pending' as const,
+              receiptId: '',
+              synced: false
             };
             setTransaction(newTransaction);
             storageService.saveTransaction(newTransaction); // Save initial transaction
