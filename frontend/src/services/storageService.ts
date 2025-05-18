@@ -5,111 +5,232 @@ export interface StorageService {
   getUser(email: string): Promise<any>;
   debugListAllUsers(): Promise<any[]>;
   clearUserStorage(): Promise<void>;
-  
+
   saveTransaction(tx: Transaction): Promise<void>;
   getTransactions(): Promise<Transaction[]>;
   clearTransactions(): Promise<void>;
-  
+
   saveOfflineBalance(balance: number, userEmail: string): Promise<void>;
   getOfflineBalance(userEmail: string): Promise<number>;
 }
 
-export class LocalStorageService implements StorageService {
-  private static readonly USER_PREFIX = 'user_';
-  private static readonly TX_PREFIX = 'tx_';
-  private static readonly BALANCE_PREFIX = 'balance_';
+export class IndexedDBStorageService implements StorageService {
+  private static readonly DB_NAME = 'app_storage';
+  private static readonly DB_VERSION = 1;
+  private static readonly USER_STORE = 'users';
+  private static readonly TX_STORE = 'transactions';
+  private static readonly BALANCE_STORE = 'balances';
+
+  private db: IDBDatabase | null = null;
+
+  constructor() {
+    this.initDB();
+  }
+
+  private initDB(): Promise<IDBDatabase> {
+    if (this.db) {
+      return Promise.resolve(this.db);
+    }
+
+    return new Promise((resolve, reject) => {
+      const request = indexedDB.open(IndexedDBStorageService.DB_NAME, IndexedDBStorageService.DB_VERSION);
+
+      request.onerror = (event) => {
+        console.error('IndexedDB error:', event);
+        reject('IndexedDB failed to open');
+      };
+
+      request.onsuccess = (event) => {
+        this.db = (event.target as IDBOpenDBRequest).result;
+        resolve(this.db);
+      };
+
+      request.onupgradeneeded = (event) => {
+        const db = (event.target as IDBOpenDBRequest).result;
+        
+        // Create users store with email as key path
+        if (!db.objectStoreNames.contains(IndexedDBStorageService.USER_STORE)) {
+          db.createObjectStore(IndexedDBStorageService.USER_STORE, { keyPath: 'email' });
+        }
+        
+        // Create transactions store
+        if (!db.objectStoreNames.contains(IndexedDBStorageService.TX_STORE)) {
+          db.createObjectStore(IndexedDBStorageService.TX_STORE, { keyPath: 'id' });
+        }
+        
+        // Create balances store with userEmail as key path
+        if (!db.objectStoreNames.contains(IndexedDBStorageService.BALANCE_STORE)) {
+          db.createObjectStore(IndexedDBStorageService.BALANCE_STORE, { keyPath: 'userEmail' });
+        }
+      };
+    });
+  }
+
+  private async getStore(storeName: string, mode: IDBTransactionMode = 'readonly'): Promise<IDBObjectStore> {
+    const db = await this.initDB();
+    const transaction = db.transaction(storeName, mode);
+    return transaction.objectStore(storeName);
+  }
 
   async saveUser(email: string, user: any): Promise<any> {
     try {
       console.log("Saving user:", user);
-      const existingUser = await this.getUser(email); //
-      if (existingUser) { //
-        console.log("User already exists, updating data."); //
+      const existingUser = await this.getUser(email);
+      if (existingUser) {
+        console.log("User already exists, updating data.");
       } else {
-        console.log("User does not exist, saving new data."); //
+        console.log("User does not exist, saving new data.");
       }
 
       const userToStore = {
         email: email,
         crypto_salt: user.crypto_salt,
         encryptedData: user.encryptedData
-      }; //
-      localStorage.setItem(`${LocalStorageService.USER_PREFIX}${email}`, JSON.stringify(userToStore)); //
-      return userToStore;
+      };
+
+      const store = await this.getStore(IndexedDBStorageService.USER_STORE, 'readwrite');
+      return new Promise((resolve, reject) => {
+        const request = store.put(userToStore);
+        request.onsuccess = () => resolve(userToStore);
+        request.onerror = (event) => {
+          console.error("Error saving user:", event);
+          reject(event);
+        };
+      });
     } catch (error) {
-      console.error("Error saving user:", error); //
-      throw error; //
+      console.error("Error saving user:", error);
+      throw error;
     }
   }
 
   async getUser(email: string): Promise<any> {
     try {
-      console.log(`Attempting to get user with email: ${email}`); //
-      const userStr = localStorage.getItem(`${LocalStorageService.USER_PREFIX}${email}`); //
-      return userStr ? JSON.parse(userStr) : null; //
+      console.log(`Attempting to get user with email: ${email}`);
+      const store = await this.getStore(IndexedDBStorageService.USER_STORE);
+      
+      return new Promise((resolve, reject) => {
+        const request = store.get(email);
+        request.onsuccess = () => resolve(request.result || null);
+        request.onerror = (event) => {
+          console.error("Error getting user:", event);
+          reject(event);
+        };
+      });
     } catch (error) {
-      console.error("Error getting user:", error); //
-      throw error; //
+      console.error("Error getting user:", error);
+      throw error;
     }
   }
 
   async debugListAllUsers(): Promise<any[]> {
-    const users: any[] = []; //
-    for (let i = 0; i < localStorage.length; i++) { //
-      const key = localStorage.key(i); //
-      if (key?.startsWith(LocalStorageService.USER_PREFIX)) { //
-        const user = JSON.parse(localStorage.getItem(key) || '{}'); //
-        if (user.email) { //
-          users.push(user); //
+    const store = await this.getStore(IndexedDBStorageService.USER_STORE);
+    
+    return new Promise((resolve, reject) => {
+      const users: any[] = [];
+      const request = store.openCursor();
+      
+      request.onsuccess = (event) => {
+        const cursor = (event.target as IDBRequest).result;
+        if (cursor) {
+          const user = cursor.value;
+          if (user.email) {
+            users.push(user);
+          }
+          cursor.continue();
+        } else {
+          console.log('All users in storage:', users);
+          resolve(users);
         }
-      }
-    }
-    console.log('All users in storage:', users); //
-    return users; //
+      };
+      
+      request.onerror = (event) => {
+        console.error("Error listing users:", event);
+        reject(event);
+      };
+    });
   }
 
   async clearUserStorage(): Promise<void> {
-    for (let i = 0; i < localStorage.length; i++) {
-      const key = localStorage.key(i);
-      if (key?.startsWith(LocalStorageService.USER_PREFIX)) { //
-        localStorage.removeItem(key); //
-      }
-    }
+    const store = await this.getStore(IndexedDBStorageService.USER_STORE, 'readwrite');
+    
+    return new Promise((resolve, reject) => {
+      const request = store.clear();
+      request.onsuccess = () => resolve();
+      request.onerror = (event) => reject(event);
+    });
   }
 
   async saveTransaction(tx: Transaction): Promise<void> {
-    let txs = await this.getTransactions();
-    const existingTxIndex = txs.findIndex(existing => existing.id === tx.id);
-
-    if (existingTxIndex > -1) {
-      // If transaction with the same ID exists, update it
-      txs[existingTxIndex] = tx;
-    } else {
-      // Otherwise, add the new transaction
-      txs.push(tx);
-    }
-    localStorage.setItem(LocalStorageService.TX_PREFIX, JSON.stringify(txs));
+    const store = await this.getStore(IndexedDBStorageService.TX_STORE, 'readwrite');
+    
+    return new Promise((resolve, reject) => {
+      const request = store.put(tx);
+      request.onsuccess = () => resolve();
+      request.onerror = (event) => reject(event);
+    });
   }
 
   async getTransactions(): Promise<Transaction[]> {
-    const txsStr = localStorage.getItem(LocalStorageService.TX_PREFIX);
-    return txsStr ?
-      JSON.parse(txsStr) : []; //
+    const store = await this.getStore(IndexedDBStorageService.TX_STORE);
+    
+    return new Promise((resolve, reject) => {
+      const transactions: Transaction[] = [];
+      const request = store.openCursor();
+      
+      request.onsuccess = (event) => {
+        const cursor = (event.target as IDBRequest).result;
+        if (cursor) {
+          transactions.push(cursor.value);
+          cursor.continue();
+        } else {
+          resolve(transactions);
+        }
+      };
+      
+      request.onerror = (event) => {
+        console.error("Error getting transactions:", event);
+        reject(event);
+      };
+    });
   }
 
   async clearTransactions(): Promise<void> {
-    localStorage.removeItem(LocalStorageService.TX_PREFIX); //
+    const store = await this.getStore(IndexedDBStorageService.TX_STORE, 'readwrite');
+    
+    return new Promise((resolve, reject) => {
+      const request = store.clear();
+      request.onsuccess = () => resolve();
+      request.onerror = (event) => reject(event);
+    });
   }
 
   async saveOfflineBalance(balance: number, userEmail: string): Promise<void> {
-    localStorage.setItem(`${LocalStorageService.BALANCE_PREFIX}${userEmail}`, balance.toString()); //
+    const store = await this.getStore(IndexedDBStorageService.BALANCE_STORE, 'readwrite');
+    
+    return new Promise((resolve, reject) => {
+      const balanceRecord = { userEmail, balance };
+      const request = store.put(balanceRecord);
+      request.onsuccess = () => resolve();
+      request.onerror = (event) => reject(event);
+    });
   }
 
   async getOfflineBalance(userEmail: string): Promise<number> {
-    const balanceStr = localStorage.getItem(`${LocalStorageService.BALANCE_PREFIX}${userEmail}`); //
-    return balanceStr ? parseFloat(balanceStr) : 0; //
+    const store = await this.getStore(IndexedDBStorageService.BALANCE_STORE);
+    
+    return new Promise((resolve, reject) => {
+      const request = store.get(userEmail);
+      request.onsuccess = () => {
+        const result = request.result;
+        resolve(result ? result.balance : 0);
+      };
+      request.onerror = (event) => {
+        console.error("Error getting offline balance:", event);
+        reject(event);
+      };
+    });
   }
 }
 
 // Export a singleton instance
-export const storageService = new LocalStorageService(); //
+export const storageService = new IndexedDBStorageService();
