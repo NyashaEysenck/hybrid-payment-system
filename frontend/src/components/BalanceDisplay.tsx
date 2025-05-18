@@ -2,7 +2,7 @@
 import { cn } from "@/lib/utils";
 
 interface BalanceDisplayProps {
-  amount: number;
+  amount: number | string;
   label: string;
   size?: "sm" | "md" | "lg";
   className?: string;
@@ -34,7 +34,7 @@ const BalanceDisplay = ({
           "text-4xl": size === "lg",
         })}
       >
-        ${amount.toFixed(2)}
+        {typeof amount === 'number' ? `$${amount.toFixed(2)}` : amount}
       </span>
     </div>
   );

@@ -57,11 +57,11 @@ const Dashboard = () => {
                 icon={<Wifi size={16} />} 
               />
               <BalanceDisplay 
-                amount={offlineBalance} 
+                amount={isOffline ? offlineBalance : "N/A"} 
                 label="Offline Balance" 
                 size="md" 
                 type="secondary" 
-                icon={isOffline ? <WifiOff size={16} /> : <Wifi size={16} />} 
+                icon={<WifiOff size={16} />} 
               />
             </div>
           </div>

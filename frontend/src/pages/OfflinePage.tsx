@@ -15,7 +15,8 @@ import {
   Smartphone,
   Send,
   Wallet,
-  ArrowLeftRight
+  ArrowLeftRight,
+  WifiOff
 } from "lucide-react";
 import { Label } from "@/components/ui/label";
 import { Slider } from "@/components/ui/slider";
@@ -23,14 +24,14 @@ import { useNavigate } from "react-router-dom";
 
 const OfflinePage = () => {
   const { balance, fetchWalletData } = useWallet();
-  const { offlineBalance, pendingTransactions, refreshOfflineBalance } = useOfflineBalance();
+  const { offlineBalance, pendingTransactions, refreshOfflineBalance, isOffline } = useOfflineBalance();
   const [transferAmount, setTransferAmount] = useState(0);
   const [isProcessing, setIsProcessing] = useState(false);
   const navigate = useNavigate();
 
   // Calculate available balance with precision
-  const onlineBalance = balance;
-  const maxTransferToOffline = Math.min(500, onlineBalance > 0 ? Math.floor(onlineBalance * 100) / 100 : 0);
+  const onlineBalance = isOffline ? "N/A" : Number(balance);
+  const maxTransferToOffline = isOffline ? 0 : Math.min(500, Number(onlineBalance) > 0 ? Math.floor(Number(onlineBalance) * 100) / 100 : 0);
   const maxTransferToOnline = Math.min(500, offlineBalance > 0 ? Math.floor(offlineBalance * 100) / 100 : 0);
 
   // Update transfer amount when balances change
@@ -106,7 +107,7 @@ const OfflinePage = () => {
 
   // Handle transferring money from online to offline balance
   const handleTransferToOffline = async () => {
-    if (transferAmount <= 0 || transferAmount > onlineBalance) {
+    if (transferAmount <= 0 || typeof onlineBalance === 'string' || transferAmount > Number(onlineBalance)) {
       console.error('Invalid transfer amount:', transferAmount);
       return;
     }
@@ -138,7 +139,7 @@ const OfflinePage = () => {
 
   // Handle transferring money from offline to online balance
   const handleTransferToOnline = async () => {
-    if (transferAmount <= 0 || transferAmount > offlineBalance) {
+    if (transferAmount <= 0 || typeof offlineBalance === 'string' || transferAmount > Number(offlineBalance)) {
       console.error('Invalid transfer amount:', transferAmount);
       return;
     }
@@ -188,9 +189,11 @@ const OfflinePage = () => {
                 type="primary" 
               />
               <BalanceDisplay 
-                amount={offlineBalance} 
+                amount={isOffline ? offlineBalance : "N/A"} 
                 label="Offline Balance" 
+                size="md" 
                 type="secondary" 
+                icon={<WifiOff size={16} />} 
               />
               {pendingTransactions > 0 && (
                 <div className="text-sm text-amber-600 mt-2">
@@ -213,8 +216,8 @@ const OfflinePage = () => {
                 <Slider
                   value={[transferAmount]}
                   min={0}
-                  max={Math.min(500, maxTransferToOffline)}
-                  step={maxTransferToOffline > 50 ? 5 : 1} // Smaller step for smaller balances
+                  max={Math.min(500, Number(maxTransferToOffline))}
+                  step={Number(maxTransferToOffline) > 50 ? 5 : 1} // Smaller step for smaller balances
                   onValueChange={(value) => {
                     // Round to 2 decimal places
                     const roundedValue = Math.floor(value[0] * 100) / 100;
@@ -224,8 +227,8 @@ const OfflinePage = () => {
                 />
                 <div className="flex justify-between text-sm text-dark-lighter">
                   <span>$0</span>
-                  <span>${transferAmount.toFixed(2)}</span>
-                  <span>${Math.min(500, maxTransferToOffline, maxTransferToOnline).toFixed(2)}</span>
+                  <span>${typeof transferAmount === 'number' ? transferAmount.toFixed(2) : transferAmount}</span>
+                  <span>${Math.min(500, Number(maxTransferToOffline), Number(maxTransferToOnline)).toFixed(2)}</span>
                 </div>
               </div>
 
@@ -233,7 +236,7 @@ const OfflinePage = () => {
                 <GreenButton 
                   onClick={handleTransferToOffline}
                   className="flex-1 flex items-center justify-center gap-1"
-                  disabled={onlineBalance < transferAmount || isProcessing}
+                  disabled={typeof onlineBalance === 'string' || Number(onlineBalance) < transferAmount || isProcessing}
                 >
                   <Smartphone size={16} />
                   To Offline
