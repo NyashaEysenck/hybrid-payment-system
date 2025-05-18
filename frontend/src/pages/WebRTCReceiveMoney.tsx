@@ -99,6 +99,11 @@ const WebRTCReceiveMoney = () => {
           setIsMultiChunkMode(true);
           setTotalChunksExpected(totalChunks);
           setScannedChunks(new Array(totalChunks).fill(null));
+          toast({
+            title: "Multiple QR Codes Required",
+            description: `This is chunk 1 of ${totalChunks}. Please scan all chunks in order.`,
+            duration: 5000,
+          });
         }
         
         if (!/^[A-Za-z0-9+/=]+$/.test(chunkData)) {
@@ -139,7 +144,11 @@ const WebRTCReceiveMoney = () => {
           }
         } else {
           const missingChunks = totalChunks - updatedChunks.filter(Boolean).length;
-          setError(`Received chunk ${currentChunk} of ${totalChunks}. Need ${missingChunks} more chunks.`);
+          toast({
+            title: `Chunk ${currentChunk} Scanned`,
+            description: `${missingChunks} more chunks to scan.`,
+            duration: 3000,
+          });
           setLoading(false);
           setShowScanner(true);
         }
