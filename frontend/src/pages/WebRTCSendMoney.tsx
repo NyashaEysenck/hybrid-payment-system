@@ -475,25 +475,49 @@ const WebRTCSendMoney: React.FC = () => {
           {step === SendMoneyStep.createOffer && offerQrData && (
             <div className="space-y-6">
               <div className="text-center">
-                <h2 className="text-xl font-semibold mb-2">Scan This QR Code</h2>
-                <p className="text-sm text-gray-500 mb-6">Ask the recipient to scan this QR code with their device.</p>
+                <h2 className="text-xl font-semibold mb-2">Show QR Code to Sender</h2>
+                <p className="text-sm text-gray-500">
+                  {offerQrDataChunks.length > 1
+                    ? `Show QR code ${currentQrChunkIndex + 1} of ${offerQrDataChunks.length} to the sender.`
+                    : 'Show this QR code to the sender to establish the connection.'}
+                </p>
               </div>
-              <div className="flex justify-center mb-4">
-                <div className="p-4 bg-white border rounded-lg">
-                  {offerQrData && (<QRCode value={offerQrData} size={200} level="H"/>)}
+
+              <div className="flex justify-center">
+                <div className="bg-white p-4 rounded-lg shadow-inner">
+                  <QRCode value={offerQrData} size={256} />
                 </div>
               </div>
+
               {offerQrDataChunks.length > 1 && (
-                <div className="flex items-center justify-center gap-4 mb-4">
-                  <Button variant="outline" size="sm" onClick={() => { const newIndex = Math.max(0, currentQrChunkIndex - 1); setCurrentQrChunkIndex(newIndex); setOfferQrData(offerQrDataChunks[newIndex]); }} disabled={currentQrChunkIndex === 0}>
-                    <ChevronLeft className="h-4 w-4" />Previous
+                <div className="flex justify-between space-x-4">
+                  <Button
+                    variant="outline"
+                    onClick={() => {
+                      const newIndex = Math.max(0, currentQrChunkIndex - 1);
+                      setCurrentQrChunkIndex(newIndex);
+                      setOfferQrData(offerQrDataChunks[newIndex]);
+                    }}
+                    disabled={currentQrChunkIndex === 0}
+                  >
+                    <ChevronLeft className="h-4 w-4" />
+                    Previous
                   </Button>
-                  <span className="text-sm text-gray-500">QR Code {currentQrChunkIndex + 1} of {offerQrDataChunks.length}</span>
-                  <Button variant="outline" size="sm" onClick={() => { const newIndex = Math.min(offerQrDataChunks.length - 1, currentQrChunkIndex + 1); setCurrentQrChunkIndex(newIndex); setOfferQrData(offerQrDataChunks[newIndex]); }} disabled={currentQrChunkIndex === offerQrDataChunks.length - 1}>
-                    Next<ChevronRight className="h-4 w-4" />
+                  <Button
+                    variant="outline"
+                    onClick={() => {
+                      const newIndex = Math.min(offerQrDataChunks.length - 1, currentQrChunkIndex + 1);
+                      setCurrentQrChunkIndex(newIndex);
+                      setOfferQrData(offerQrDataChunks[newIndex]);
+                    }}
+                    disabled={currentQrChunkIndex === offerQrDataChunks.length - 1}
+                  >
+                    Next
+                    <ChevronRight className="h-4 w-4" />
                   </Button>
                 </div>
               )}
+
               <p className="text-center text-sm text-gray-500">Amount: ${typeof amount === 'number' ? amount.toFixed(2) : '0.00'}</p>
               {offerQrDataChunks.length > 1 && (<p className="text-center text-xs text-amber-600 mt-2">This payment requires multiple QR codes. Ask the recipient to scan all {offerQrDataChunks.length} QR codes in order.</p>)}
               {error && (<Alert variant="destructive"><AlertTitle>Error</AlertTitle><AlertDescription>{error}</AlertDescription></Alert>)}
