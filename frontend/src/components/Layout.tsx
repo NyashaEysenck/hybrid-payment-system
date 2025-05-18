@@ -20,15 +20,13 @@ const Layout = ({ children }: LayoutProps) => {
     return savedCollapsed ? JSON.parse(savedCollapsed) : false;
   });
   const location = useLocation();
-  const [isOnline, setIsOnline] = useState(() => {
-    // Initialize with the last known online status from localStorage if available
-    const savedStatus = typeof window !== 'undefined' ? localStorage.getItem('onlineStatus') : null;
-    return savedStatus ? savedStatus === 'true' : true; // Default to online mode
-  });
-  const { refreshOfflineBalance, updateOfflineBalance } = useOfflineBalance();
+  const { isOffline, toggleOfflineMode } = useOfflineBalance();
   const { reservedBalance } = useWallet();
-  
-  // We no longer need IndexedDB as we're using the context directly
+
+  // Toggle online/offline mode using OfflineBalanceContext
+  const toggleOnlineMode = useCallback(() => {
+    toggleOfflineMode();
+  }, [toggleOfflineMode]);
 
   // Toggle sidebar collapsed state and persist it
   const toggleSidebarCollapsed = useCallback(() => {
@@ -38,32 +36,6 @@ const Layout = ({ children }: LayoutProps) => {
       return newState;
     });
   }, []);
-
-  // Toggle online/offline mode manually
-
-  const toggleOnlineMode = useCallback(() => {
-    const newStatus = !isOnline;
-    setIsOnline(newStatus);
-    localStorage.setItem('onlineStatus', String(newStatus));
-
-    // When going from online to offline, set offline balance to reserved balance
-    if (!newStatus) { // switching to offline
-      // Use the reservedBalance from the wallet context
-      const reserved = reservedBalance || 0;
-      // Directly set offline balance
-      updateOfflineBalance(-Infinity); // Reset to 0
-      updateOfflineBalance(reserved); // Set to reserved
-    }
-
-    // Show toast notification
-    toast({
-      title: newStatus ? "Online Mode Activated" : "Offline Mode Activated",
-      description: newStatus 
-        ? "Your app is now in online mode. Transactions will be processed immediately." 
-        : "Your app is now in offline mode. Transactions will be stored locally.",
-      variant: "default"
-    });
-  }, [isOnline, reservedBalance, updateOfflineBalance, toast]);
 
   const menuItems = [
     { name: "Dashboard", path: "/dashboard", icon: Home },
@@ -126,20 +98,23 @@ const Layout = ({ children }: LayoutProps) => {
           <button
             className={cn(
               "flex w-full items-center rounded-md px-4 py-3 hover:bg-gray-100",
-              isOnline ? "text-greenleaf-600" : "text-gray-600",
+              isOffline ? "text-gray-600" : "text-greenleaf-600",
               sidebarCollapsed && "justify-center"
             )}
             onClick={toggleOnlineMode}
           >
-            {isOnline ? (
-              <Wifi size={20} className={cn("text-greenleaf-500", sidebarCollapsed ? "mx-auto" : "mr-3")} />
-            ) : (
+            {isOffline ? (
               <WifiOff size={20} className={cn("text-gray-500", sidebarCollapsed ? "mx-auto" : "mr-3")} />
+            ) : (
+              <Wifi size={20} className={cn("text-greenleaf-500", sidebarCollapsed ? "mx-auto" : "mr-3")} />
             )}
             {!sidebarCollapsed && (
               <div className="flex flex-col items-start">
-                <span className="font-medium">{isOnline ? "Online Mode" : "Offline Mode"}</span>
-                <span className="text-xs text-gray-500">Click to toggle</span>
+                <span className="font-medium">{isOffline ? "Go Online" : "Go Offline"}</span>
+                <span className="text-xs text-gray-500">{isOffline ? 
+                  "Your offline balance will be synced with your online balance when you go online." : 
+                  "Your online balance will be copied to your offline balance when you go offline."
+                }</span>
               </div>
             )}
           </button>
@@ -181,23 +156,22 @@ const Layout = ({ children }: LayoutProps) => {
                   onClick={toggleOnlineMode}
                   className={cn(
                     "flex items-center px-3 py-1 rounded-full text-xs font-medium transition-colors",
-                    isOnline 
-                      ? "bg-greenleaf-100 text-greenleaf-700 hover:bg-greenleaf-200" 
-                      : "bg-gray-200 text-gray-700 hover:bg-gray-300"
+                    isOffline 
+                      ? "bg-gray-200 text-gray-700 hover:bg-gray-300" 
+                      : "bg-greenleaf-100 text-greenleaf-700 hover:bg-greenleaf-200"
                   )}
                 >
-                  {isOnline ? (
+                  {isOffline ? (
                     <>
-                      <Wifi size={14} className="mr-1" />
-                      Online Mode
+                      <WifiOff size={14} className="mr-1" />
+                      Go Online
                     </>
                   ) : (
                     <>
-                      <WifiOff size={14} className="mr-1" />
-                      Offline Mode
+                      <Wifi size={14} className="mr-1" />
+                      Go Offline
                     </>
                   )}
-                  <ToggleLeft size={14} className="ml-1" />
                 </button>
               </div>
             </div>

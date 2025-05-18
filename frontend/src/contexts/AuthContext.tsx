@@ -141,11 +141,20 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
   }, [toast]);
 
   const logout = useCallback(() => {
+    // Clear all storage
     localStorage.removeItem('lastEmail');
     localStorage.removeItem('offlineBalance');
     sessionStorage.removeItem('sessionUser');
+    clearUserStorage(); // Clear any additional storage
+    
+    // Clear user state
     setUser(null);
-    toast({ title: "Logged out", description: "You have been signed out" });
+    
+    // Show success message
+    toast({ 
+      title: "Logged out", 
+      description: "You have been signed out successfully."
+    });
   }, [toast]);
 
   return (

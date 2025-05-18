@@ -68,32 +68,7 @@ const Dashboard = () => {
 
 
 
-          {/* Offline Mode Toggle */}
-          <div className="mb-6 border-t pt-6">
-            <h3 className="font-medium text-dark-light mb-3 flex items-center gap-2">
-              <WifiOff size={18} />
-              {isOffline ? 'Go Online' : 'Go Offline'}
-            </h3>
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              <div className="flex items-center gap-4">
-                <GreenButton 
-                  onClick={toggleOfflineMode}
-                  className="flex items-center gap-2"
-                >
-                  <WifiOff size={16} />
-                  {isOffline ? 'Go Online' : 'Go Offline'}
-                </GreenButton>
-              </div>
-              <div className="flex items-center">
-                <p className="text-sm text-gray-500">
-                  {isOffline ? 
-                    'Your offline balance will be synced with your online balance when you go online.' :
-                    'Your online balance will be copied to your offline balance when you go offline.'
-                  }
-                </p>
-              </div>
-            </div>
-          </div>
+
 
           {/* Quick Actions */}
           <div>

@@ -540,7 +540,7 @@ const WebRTCSendMoney: React.FC = () => {
               {transactionRef.current && (
                  <p className="text-xs text-gray-400 mt-2">Transaction ID: {transactionRef.current.id} (for reference)</p>
               )}
-              {error && (<Alert variant="warning" className="mt-4"><AlertTitle>Details</AlertTitle><AlertDescription>{error}</AlertDescription></Alert>)}
+              {error && (<Alert variant="destructive" className="mt-4"><AlertTitle>Details</AlertTitle><AlertDescription>{error}</AlertDescription></Alert>)}
               <GreenButton onClick={() => navigate('/offline')} className="w-full mt-6">Okay</GreenButton>
                <Button variant="outline" onClick={handleCancelAndReset} className="w-full mt-2">Try Another Payment</Button>
             </div>
