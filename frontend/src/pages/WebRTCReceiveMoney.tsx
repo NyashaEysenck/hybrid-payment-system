@@ -15,6 +15,7 @@ import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle }
 import { ArrowLeft, RefreshCw, CheckCircle, QrCode, ScanLine, Smartphone, ChevronLeft, ChevronRight } from "lucide-react";
 import createWebRTCService, { WebRTCConnectionData } from '@/services/WebRTCService';
 import { encodeConnectionData, decodeConnectionData, joinConnectionData, splitConnectionData } from '@/utils/qrCodeUtils';
+import { storageService } from '@/services/storageService'; // Import storageService
 
 type ReceiveMoneyStep = 'scan' | 'createAnswer' | 'waitForPayment' | 'complete';
 
@@ -34,7 +35,6 @@ const WebRTCReceiveMoney = () => {
   const { offlineBalance, refreshOfflineBalance, addToOfflineBalance } = useOfflineBalance();
   const navigate = useNavigate();
   const { toast } = useToast();
-  
   const [step, setStep] = useState<ReceiveMoneyStep>('scan');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -44,7 +44,6 @@ const WebRTCReceiveMoney = () => {
   const [webrtcService, setWebrtcService] = useState<ReturnType<typeof createWebRTCService> | null>(null);
   const [transaction, setTransaction] = useState<Transaction | null>(null);
   const [showScanner, setShowScanner] = useState(false);
-  
   const [scannedChunks, setScannedChunks] = useState<string[]>([]);
   const [totalChunksExpected, setTotalChunksExpected] = useState<number | null>(null);
   const [isMultiChunkMode, setIsMultiChunkMode] = useState(false);
@@ -53,7 +52,7 @@ const WebRTCReceiveMoney = () => {
     if (user?.email) {
       const service = createWebRTCService(user.email);
       setWebrtcService(service);
-      
+
       return () => {
         service.closeConnection();
       };
@@ -69,7 +68,6 @@ const WebRTCReceiveMoney = () => {
   const handleQrCodeScanned = async (data: string) => {
     console.log('QR code scanned, processing data...');
     setShowScanner(false);
-    
     if (!webrtcService || !user?.email) {
       console.error('WebRTC service not initialized or user not logged in');
       setError('WebRTC service not initialized or user not logged in');
@@ -77,24 +75,22 @@ const WebRTCReceiveMoney = () => {
     }
     setLoading(true);
     setError(null);
-    
     try {
       if (!data || data.trim() === '') {
         throw new Error('Invalid QR code: empty data');
       }
-      
+
       if (data.startsWith('CHUNK:')) {
         const parts = data.split(':', 4);
         if (parts.length !== 4) {
           throw new Error('Invalid chunk format');
         }
-        
+
         const currentChunk = parseInt(parts[1], 10);
         const totalChunks = parseInt(parts[2], 10);
         const chunkData = parts[3];
-        
+
         console.log(`Received chunk ${currentChunk} of ${totalChunks}`);
-        
         if (!isMultiChunkMode) {
           setIsMultiChunkMode(true);
           setTotalChunksExpected(totalChunks);
@@ -105,34 +101,33 @@ const WebRTCReceiveMoney = () => {
             duration: 5000,
           });
         }
-        
+
         if (!/^[A-Za-z0-9+/=]+$/.test(chunkData)) {
           console.error('Invalid base64 data in chunk');
           throw new Error(`Invalid QR code format: chunk ${currentChunk} is not properly encoded`);
         }
-        
+
         const updatedChunks = [...scannedChunks];
         updatedChunks[currentChunk - 1] = chunkData;
         setScannedChunks(updatedChunks);
-        
+
         console.log(`Stored chunk ${currentChunk} of ${totalChunks}, data length: ${chunkData.length}`);
         console.log(`First 20 chars of chunk: ${chunkData.substring(0, 20)}...`);
-        
+
         if (updatedChunks.filter(Boolean).length === totalChunks) {
           console.log('All chunks received, processing...');
-          
           const combinedData = updatedChunks.join('');
           console.log(`Combined data length: ${combinedData.length}`);
-          
+
           try {
             const offerData = decodeConnectionData(combinedData);
             console.log('Combined offer data decoded successfully:', offerData.type);
-            
+
             if (offerData.type !== 'offer') {
               console.error('Invalid QR code type:', offerData.type);
               throw new Error('Invalid QR code: not an offer');
             }
-            
+
             processOfferData(offerData);
           } catch (error) {
             console.error('Error processing combined chunks:', error);
@@ -154,22 +149,22 @@ const WebRTCReceiveMoney = () => {
         }
         return;
       }
-      
+
       try {
         if (!/^[A-Za-z0-9+/=]+$/.test(data)) {
           console.error('Invalid base64 data in single QR code');
           throw new Error('Invalid QR code format: not properly encoded');
         }
-        
+
         console.log('Decoding QR code data...');
         const offerData = decodeConnectionData(data);
         console.log('Offer data decoded successfully:', offerData.type);
-        
+
         if (offerData.type !== 'offer') {
           console.error('Invalid QR code type:', offerData.type);
           throw new Error('Invalid QR code: not an offer');
         }
-        
+
         processOfferData(offerData);
       } catch (error) {
         console.error('Error decoding QR code:', error);
@@ -185,17 +180,17 @@ const WebRTCReceiveMoney = () => {
       setLoading(false);
     }
   };
-  
+
   const processOfferData = async (offerData: WebRTCConnectionData) => {
     console.log('Processing offer data...');
     if (!webrtcService) {
       throw new Error('WebRTC service not initialized');
     }
-    
+
     try {
       const answer = await webrtcService.initiateReceiverConnection(offerData);
       console.log('Created answer:', answer);
-      
+
       const answerData: WebRTCConnectionData = {
         type: 'answer' as const,
         sdp: answer.sdp,
@@ -204,15 +199,15 @@ const WebRTCReceiveMoney = () => {
 
       const chunks = splitConnectionData(answerData);
       console.log(`Split answer into ${chunks.length} chunks`);
-      
-      webrtcService.onMessage((message) => {
+
+      webrtcService.onMessage(async (message) => { // Added async here
         console.log('Received message:', message);
         if (message.type === 'payment') {
           console.log('Payment message received, processing...');
-          handlePaymentReceived(message);
+          await handlePaymentReceived(message); // Await the handling of payment
         }
       });
-      
+
       webrtcService.onConnectionStateChange((state) => {
         console.log('Connection state changed:', state);
         if (state === 'connected') {
@@ -227,36 +222,38 @@ const WebRTCReceiveMoney = () => {
           console.log('WebRTC connection lost:', state);
           if (step !== 'complete') {
             setError('Connection lost. Please try again.');
-            setStep('scan');
+            resetProcess(); // Use resetProcess on connection loss
           }
         }
       });
-      
+
       setAnswerQrDataChunks(chunks);
       setCurrentAnswerChunkIndex(0);
       setStep('createAnswer');
     } catch (error) {
       console.error('Error creating answer:', error);
-      throw error;
+      setError(`Failed to create answer: ${error instanceof Error ? error.message : 'Unknown error'}`);
+      setStep('scan'); // Go back to scan step on error
     }
   };
 
   const handlePaymentReceived = async (paymentData: any) => {
     console.log('Processing payment data:', paymentData);
     let receiptId = '';
+    let pendingTransaction: Transaction | null = null; // Define pendingTransaction outside try
     try {
       if (!paymentData.amount || !paymentData.senderID || !paymentData.transactionId) {
         console.error('Invalid payment data:', paymentData);
         throw new Error('Invalid payment data');
       }
-      
+
       receiptId = `receipt-${Date.now()}-${Math.random().toString(36).substring(2, 10)}`;
       console.log('Generated receipt ID:', receiptId);
-      
+
       const amount = Number(paymentData.amount);
       console.log('Payment amount:', amount);
-      
-      const pendingTransaction: Transaction = {
+
+      pendingTransaction = {
         id: paymentData.transactionId,
         type: 'receive',
         amount: amount,
@@ -266,14 +263,14 @@ const WebRTCReceiveMoney = () => {
         receiptId,
         status: 'pending' as const
       };
-      
       setTransaction(pendingTransaction);
-      
+      await storageService.saveTransaction(pendingTransaction); // Save pending transaction
+
       console.log('Adding to offline balance:', amount);
       await addToOfflineBalance(amount);
-      
+
       console.log('Balance update completed');
-      
+
       console.log('Sending receipt to sender...');
       await webrtcService?.sendMessage({
         type: 'receipt',
@@ -281,21 +278,21 @@ const WebRTCReceiveMoney = () => {
         transactionId: paymentData.transactionId,
         status: 'success'
       });
-      
       console.log('Sent receipt:', {
         receiptId: pendingTransaction.receiptId,
         transactionId: paymentData.transactionId,
         status: 'success'
       });
-      
+
       const completedTransaction: Transaction = {
         ...pendingTransaction,
         status: 'completed' as const
       };
       setTransaction(completedTransaction);
-      
+      await storageService.saveTransaction(completedTransaction); // Save completed transaction
+
       setStep('complete');
-      
+
       toast({
         title: "Payment Received",
         description: `$${amount.toFixed(2)} received successfully. Offline balance updated.`,
@@ -305,24 +302,32 @@ const WebRTCReceiveMoney = () => {
       console.error('Error processing payment:', error);
       const errorMessage = error instanceof Error ? error.message : 'Unknown error';
       setError(`Payment failed: ${errorMessage}`);
-      
-      if (transaction) {
+
+      if (pendingTransaction) { // Use pendingTransaction here
         const failedTransaction: Transaction = {
+          ...pendingTransaction, // Use pendingTransaction
+          status: 'failed' as const
+        };
+        setTransaction(failedTransaction);
+        storageService.saveTransaction(failedTransaction); // Save failed transaction
+      } else if (transaction) { // Fallback if pendingTransaction was not set
+         const failedTransaction: Transaction = {
           ...transaction,
           status: 'failed' as const
         };
         setTransaction(failedTransaction);
+        storageService.saveTransaction(failedTransaction); // Save failed transaction
       }
-      
+
+
       try {
         await webrtcService?.sendMessage({
           type: 'receipt',
           receiptId: receiptId,
           status: 'failed',
           error: errorMessage,
-          transactionId: paymentData.transactionId
+          transactionId: paymentData.transactionId // Use transactionId from paymentData
         });
-        
         console.log('Sent error receipt:', {
           receiptId,
           transactionId: paymentData.transactionId,
@@ -332,30 +337,37 @@ const WebRTCReceiveMoney = () => {
       } catch (sendError) {
         console.error('Error sending error receipt:', sendError);
       }
-      
+
       toast({
         title: "Payment Error",
         description: errorMessage,
         variant: "destructive",
         duration: 7000,
       });
-      
-      setStep('waitForPayment');
+      setStep('waitForPayment'); // Stay on waitForPayment or go back to scan? Staying for now.
     }
   };
+
 
   const resetProcess = () => {
     console.log('Resetting WebRTC process...');
     setStep('scan');
     setError(null);
     setAnswerQrData(null);
+    setAnswerQrDataChunks([]);
+    setCurrentAnswerChunkIndex(0);
+    setTransaction(null);
     setShowScanner(false);
-    
+    setScannedChunks([]);
+    setTotalChunksExpected(null);
+    setIsMultiChunkMode(false);
+
     if (webrtcService) {
       console.log('Closing existing WebRTC connection');
       webrtcService.closeConnection();
     }
-    
+
+    // Re-initialize WebRTC service
     if (user?.email) {
       console.log('Initializing new WebRTC service');
       const service = createWebRTCService(user.email);
@@ -364,6 +376,7 @@ const WebRTCReceiveMoney = () => {
       console.error('Cannot reset WebRTC service: user not logged in');
     }
   };
+
 
   const readyToScan = !!user?.email && !!webrtcService;
 
@@ -381,7 +394,7 @@ const WebRTCReceiveMoney = () => {
           </Button>
           <h1 className="text-2xl font-bold text-dark">Receive Money (WebRTC)</h1>
         </div>
-        
+
         <WhiteCard className="p-6 max-w-md mx-auto">
           {step === 'scan' && (
             <div className="space-y-6">
@@ -392,18 +405,18 @@ const WebRTCReceiveMoney = () => {
               <p className="text-xs text-gray-400">
                 Make sure the QR code is well-lit and positioned within the scanning area.
               </p>
-              
+
               {readyToScan ? (
                 <div className="flex flex-col gap-3">
-                  <GreenButton 
+                  <GreenButton
                     onClick={() => setShowScanner(true)}
                     className="w-full"
                   >
                     <ScanLine className="mr-2 h-4 w-4" />
                     Scan QR Code
                   </GreenButton>
-                  <Button 
-                    variant="outline" 
+                  <Button
+                    variant="outline"
                     onClick={() => navigate('/offline')}
                     className="w-full"
                   >
@@ -416,7 +429,7 @@ const WebRTCReceiveMoney = () => {
                   <p>Initializing...</p>
                 </div>
               )}
-              
+
               {error && (
                 <Alert variant="destructive">
                   <AlertTitle>Error</AlertTitle>
@@ -425,7 +438,7 @@ const WebRTCReceiveMoney = () => {
               )}
             </div>
           )}
-          
+
           {showScanner && (
             <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
               <div className="bg-white p-6 rounded-lg max-w-sm w-full">
@@ -433,18 +446,18 @@ const WebRTCReceiveMoney = () => {
                 <p className="text-sm text-gray-500 mb-4">Position the QR code from the sender within the scanning area.</p>
                 <QrScanner
                   onScan={handleQrCodeScanned}
-                  onError={(scanError) => { 
-                    console.error('Scanner error:', scanError.message); 
-                    setError(scanError.message); 
-                    setShowScanner(false); 
+                  onError={(scanError) => {
+                    console.error('Scanner error:', scanError.message);
+                    setError(scanError.message);
+                    setShowScanner(false);
                   }}
-                  onCancel={() => { 
-                    console.log('Scanner cancelled by user'); 
-                    setShowScanner(false); 
+                  onCancel={() => {
+                    console.log('Scanner cancelled by user');
+                    setShowScanner(false);
                   }}
                 />
-                <Button 
-                  variant="outline" 
+                <Button
+                  variant="outline"
                   onClick={() => setShowScanner(false)}
                   className="w-full mt-4"
                 >
@@ -453,24 +466,26 @@ const WebRTCReceiveMoney = () => {
               </div>
             </div>
           )}
-          
+
           {step === 'createAnswer' && answerQrDataChunks.length > 0 && (
             <div className="space-y-6">
               <div className="text-center">
                 <h2 className="text-xl font-semibold mb-2">Show QR Code to Sender</h2>
                 <p className="text-sm text-gray-500">
-                  {answerQrDataChunks.length > 1 
+                  {answerQrDataChunks.length > 1
                     ? `Show QR code ${currentAnswerChunkIndex + 1} of ${answerQrDataChunks.length} to the sender.`
                     : 'Show this QR code to the sender to establish the connection.'}
                 </p>
               </div>
-              
+
+
               <div className="flex justify-center">
                 <div className="bg-white p-4 rounded-lg shadow-inner">
                   <QRCode value={answerQrDataChunks[currentAnswerChunkIndex]} size={256} />
                 </div>
               </div>
-              
+
+
               {answerQrDataChunks.length > 1 && (
                 <div className="flex justify-between space-x-4">
                   <Button
@@ -491,16 +506,16 @@ const WebRTCReceiveMoney = () => {
                   </Button>
                 </div>
               )}
-              
+
               {error && (
                 <Alert variant="destructive">
                   <AlertTitle>Error</AlertTitle>
                   <AlertDescription>{error}</AlertDescription>
                 </Alert>
               )}
-              
-              <Button 
-                variant="outline" 
+
+              <Button
+                variant="outline"
                 onClick={resetProcess}
                 className="w-full"
               >
@@ -509,7 +524,7 @@ const WebRTCReceiveMoney = () => {
               </Button>
             </div>
           )}
-          
+
           {step === 'waitForPayment' && (
             <div className="space-y-6 text-center">
               <RefreshCw className="h-12 w-12 text-greenleaf-600 mx-auto animate-spin" />
@@ -517,16 +532,16 @@ const WebRTCReceiveMoney = () => {
               <p className="text-sm text-gray-500">
                 Connection established. Waiting for the sender to complete the payment...
               </p>
-              
+
               {error && (
                 <Alert variant="destructive">
                   <AlertTitle>Error</AlertTitle>
                   <AlertDescription>{error}</AlertDescription>
                 </Alert>
               )}
-              
-              <Button 
-                variant="outline" 
+
+              <Button
+                variant="outline"
                 onClick={resetProcess}
                 className="w-full"
               >
@@ -535,7 +550,8 @@ const WebRTCReceiveMoney = () => {
               </Button>
             </div>
           )}
-          
+
+
           {step === 'complete' && transaction && (
             <div className="space-y-6">
               <div className="text-center mb-6">
@@ -547,7 +563,7 @@ const WebRTCReceiveMoney = () => {
                   You have successfully received a payment
                 </p>
               </div>
-              
+
               <Card>
                 <CardHeader>
                   <CardTitle>Payment Receipt</CardTitle>
@@ -582,7 +598,7 @@ const WebRTCReceiveMoney = () => {
                   </div>
                 </CardContent>
                 <CardFooter>
-                  <GreenButton 
+                  <GreenButton
                     onClick={() => navigate('/offline')}
                     className="w-full"
                   >
