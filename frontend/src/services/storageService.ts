@@ -1,15 +1,15 @@
-import { Transaction } from '@/types';
+import { Transaction } from '@/types'; // Assuming '@/types' points to your transaction.ts file
 
 export interface StorageService {
   saveUser(email: string, user: any): Promise<any>;
   getUser(email: string): Promise<any>;
   debugListAllUsers(): Promise<any[]>;
   clearUserStorage(): Promise<void>;
-  
+
   saveTransaction(tx: Transaction): Promise<void>;
   getTransactions(): Promise<Transaction[]>;
   clearTransactions(): Promise<void>;
-  
+
   saveOfflineBalance(balance: number, userEmail: string): Promise<void>;
   getOfflineBalance(userEmail: string): Promise<number>;
 }
@@ -34,7 +34,6 @@ export class LocalStorageService implements StorageService {
         crypto_salt: user.crypto_salt,
         encryptedData: user.encryptedData
       };
-
       localStorage.setItem(`${LocalStorageService.USER_PREFIX}${email}`, JSON.stringify(userToStore));
       return userToStore;
     } catch (error) {
@@ -80,13 +79,31 @@ export class LocalStorageService implements StorageService {
 
   async saveTransaction(tx: Transaction): Promise<void> {
     const txs = await this.getTransactions();
-    txs.push(tx);
+    const existingIndex = txs.findIndex(t => t.id === tx.id); // Find transaction by its unique ID
+
+    if (existingIndex > -1) {
+      // If transaction with the same ID exists, update it
+      console.log(`Updating existing transaction with ID: ${tx.id}`);
+      txs[existingIndex] = tx;
+    } else {
+      // If not found, add the new transaction
+      console.log(`Adding new transaction with ID: ${tx.id}`);
+      txs.push(tx);
+    }
+
     localStorage.setItem(LocalStorageService.TX_PREFIX, JSON.stringify(txs));
   }
 
   async getTransactions(): Promise<Transaction[]> {
     const txsStr = localStorage.getItem(LocalStorageService.TX_PREFIX);
-    return txsStr ? JSON.parse(txsStr) : [];
+    try {
+        return txsStr ? JSON.parse(txsStr) : [];
+    } catch (error) {
+        console.error("Error parsing transactions from local storage:", error);
+        // Optionally clear invalid storage or return empty array
+        // localStorage.removeItem(LocalStorageService.TX_PREFIX);
+        return [];
+    }
   }
 
   async clearTransactions(): Promise<void> {
