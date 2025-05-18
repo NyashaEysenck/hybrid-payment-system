@@ -43,7 +43,7 @@ const WebRTCReceiveMoney = () => {
   const [currentAnswerChunkIndex, setCurrentAnswerChunkIndex] = useState(0);
   const [webrtcService, setWebrtcService] = useState<ReturnType<typeof createWebRTCService> | null>(null);
   const [transaction, setTransaction] = useState<Transaction | null>(null);
-  const [showScanner, setShowScanner] = useState(true);
+  const [showScanner, setShowScanner] = useState(false);
   
   const [scannedChunks, setScannedChunks] = useState<string[]>([]);
   const [totalChunksExpected, setTotalChunksExpected] = useState<number | null>(null);
@@ -269,7 +269,6 @@ const WebRTCReceiveMoney = () => {
       
       setTransaction(pendingTransaction);
       
-      // Update offline balance using addToOfflineBalance instead of refreshOfflineBalance
       console.log('Adding to offline balance:', amount);
       await addToOfflineBalance(amount);
       
@@ -350,7 +349,7 @@ const WebRTCReceiveMoney = () => {
     setStep('scan');
     setError(null);
     setAnswerQrData(null);
-    setShowScanner(true);
+    setShowScanner(false);
     
     if (webrtcService) {
       console.log('Closing existing WebRTC connection');
@@ -395,34 +394,23 @@ const WebRTCReceiveMoney = () => {
               </p>
               
               {readyToScan ? (
-                showScanner ? (
-                  <QrScanner
-                    onScan={handleQrCodeScanned}
-                    onError={(error) => {
-                      console.error('Scanner error:', error.message);
-                      setError(error.message);
-                      setShowScanner(false);
-                    }}
-                    onCancel={() => {
-                      console.log('Scanner cancelled by user');
-                      setShowScanner(false);
-                    }}
-                  />
-                ) : (
-                  <div className="text-center">
-                    <Button 
-                      variant="outline" 
-                      onClick={() => {
-                        console.log('Opening QR scanner...');
-                        setShowScanner(true);
-                      }}
-                      className="w-full"
-                    >
-                      <ScanLine className="mr-2 h-4 w-4" />
-                      Open Scanner
-                    </Button>
-                  </div>
-                )
+                <div className="flex flex-col gap-3">
+                  <GreenButton 
+                    onClick={() => setShowScanner(true)}
+                    className="w-full"
+                  >
+                    <ScanLine className="mr-2 h-4 w-4" />
+                    Scan QR Code
+                  </GreenButton>
+                  <Button 
+                    variant="outline" 
+                    onClick={() => navigate('/offline')}
+                    className="w-full"
+                  >
+                    <ArrowLeft className="mr-2 h-4 w-4" />
+                    Cancel
+                  </Button>
+                </div>
               ) : (
                 <div className="loading">
                   <p>Initializing...</p>
@@ -435,15 +423,34 @@ const WebRTCReceiveMoney = () => {
                   <AlertDescription>{error}</AlertDescription>
                 </Alert>
               )}
-              
-              <Button 
-                variant="outline" 
-                onClick={() => navigate('/offline')}
-                className="w-full"
-              >
-                <ArrowLeft className="mr-2 h-4 w-4" />
-                Cancel
-              </Button>
+            </div>
+          )}
+          
+          {showScanner && (
+            <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+              <div className="bg-white p-6 rounded-lg max-w-sm w-full">
+                <h3 className="text-lg font-semibold mb-4">Scan Sender's QR Code</h3>
+                <p className="text-sm text-gray-500 mb-4">Position the QR code from the sender within the scanning area.</p>
+                <QrScanner
+                  onScan={handleQrCodeScanned}
+                  onError={(scanError) => { 
+                    console.error('Scanner error:', scanError.message); 
+                    setError(scanError.message); 
+                    setShowScanner(false); 
+                  }}
+                  onCancel={() => { 
+                    console.log('Scanner cancelled by user'); 
+                    setShowScanner(false); 
+                  }}
+                />
+                <Button 
+                  variant="outline" 
+                  onClick={() => setShowScanner(false)}
+                  className="w-full mt-4"
+                >
+                  Close Scanner
+                </Button>
+              </div>
             </div>
           )}
           
