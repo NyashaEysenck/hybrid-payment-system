@@ -534,4 +534,88 @@ const WebRTCReceiveMoney = () => {
               <RefreshCw className="h-12 w-12 text-greenleaf-600 mx-auto animate-spin" />
               <h2 className="text-xl font-semibold">Waiting for Payment</h2>
               <p className="text-sm text-gray-500">
-   
+                Connection established. Waiting for the sender to complete the payment...
+              </p>
+
+              {error && (
+                <Alert variant="destructive">
+                  <AlertTitle>Error</AlertTitle>
+                  <AlertDescription>{error}</AlertDescription>
+                </Alert>
+              )}
+
+              <Button
+                variant="outline"
+                onClick={resetProcess}
+                className="w-full"
+              >
+                <ArrowLeft className="mr-2 h-4 w-4" />
+                Cancel
+              </Button>
+            </div>
+          )}
+
+
+          {step === 'complete' && transaction && (
+            <div className="space-y-6">
+              <div className="text-center mb-6">
+                <div className="inline-flex items-center justify-center w-16 h-16 rounded-full bg-green-100 mb-4">
+                  <CheckCircle className="h-8 w-8 text-green-600" />
+                </div>
+                <h2 className="text-xl font-semibold">Payment Received!</h2>
+                <p className="text-gray-500 mt-1">
+                  You have successfully received a payment
+                </p>
+              </div>
+
+              <Card>
+                <CardHeader>
+                  <CardTitle>Payment Receipt</CardTitle>
+                  <CardDescription>
+                    Transaction ID: {transaction.id}
+                  </CardDescription>
+                </CardHeader>
+                <CardContent className="space-y-4">
+                  <div className="flex justify-between">
+                    <span className="text-gray-500">Amount</span>
+                    <span className="font-semibold">${transaction.amount.toFixed(2)}</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-gray-500">Sender</span>
+                    <span>{transaction.sender}</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-gray-500">Date</span>
+                    <span>{new Date(transaction.timestamp).toLocaleString()}</span>
+                  </div>
+                  {transaction.note && (
+                    <div>
+                      <span className="text-gray-500 block mb-1">Note</span>
+                      <p className="bg-gray-50 p-2 rounded text-sm">{transaction.note}</p>
+                    </div>
+                  )}
+                  <div className="pt-2">
+                    <span className="text-gray-500 block mb-1">Receipt ID</span>
+                    <p className="bg-gray-50 p-2 rounded text-xs font-mono break-all">
+                      {transaction.receiptId}
+                    </p>
+                  </div>
+                </CardContent>
+                <CardFooter>
+                  <GreenButton
+                    onClick={() => navigate('/offline')}
+                    className="w-full"
+                  >
+                    Done
+                  </GreenButton>
+                </CardFooter>
+              </Card>
+            </div>
+          )}
+        </WhiteCard>
+      </div>
+    </Layout>
+  );
+};
+
+export default WebRTCReceiveMoney;
