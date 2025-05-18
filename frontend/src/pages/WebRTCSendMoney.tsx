@@ -20,6 +20,7 @@ import { ArrowLeft, Send, RefreshCw, CheckCircle, QrCode, ScanLine, ChevronLeft,
 import { v4 as uuidv4 } from 'uuid';
 import createWebRTCService, { WebRTCConnectionData } from '@/services/WebRTCService';
 import { encodeConnectionData, decodeConnectionData, splitConnectionData, joinConnectionData } from '@/utils/qrCodeUtils';
+import { storageService } from '@/services/storageService'; // Import storageService
 
 enum SendMoneyStep {
   input = 'input',
@@ -48,7 +49,7 @@ const WebRTCSendMoney: React.FC = () => {
   const { offlineBalance, refreshOfflineBalance, addToOfflineBalance } = useOfflineBalance();
   const navigate = useNavigate();
   const { toast } = useToast();
-  
+
   const [step, setStep] = useState<SendMoneyStep>(SendMoneyStep.input);
   const [amount, setAmount] = useState<number | ''>('');
   const [recipientId, setRecipientId] = useState('');
@@ -66,7 +67,6 @@ const WebRTCSendMoney: React.FC = () => {
   const [isMultiChunkMode, setIsMultiChunkMode] = useState(false);
 
   const transactionRef = useRef<Transaction | null>(null);
-
   const setTransaction = (tx: Transaction | null) => {
     transactionRef.current = tx;
     _setTransaction(tx);
@@ -76,7 +76,7 @@ const WebRTCSendMoney: React.FC = () => {
     if (user?.email) {
       const service = createWebRTCService(user.email);
       setWebrtcService(service);
-      
+
       return () => {
         service.closeConnection();
       };
@@ -108,32 +108,30 @@ const WebRTCSendMoney: React.FC = () => {
       setError('WebRTC service not initialized or user not logged in');
       return;
     }
-    
+
     if (amount === '' || amount <= 0) {
       console.error('Invalid amount:', amount);
       setError('Please enter a valid amount greater than 0');
       return;
     }
-    
+
     if (amount > offlineBalance) {
       console.error(`Insufficient balance. Amount: ${amount}, Available: ${offlineBalance}`);
       setError(`Insufficient offline balance. Available: $${offlineBalance.toFixed(2)}`);
       return;
     }
-    
+
     setLoading(true);
     setError(null);
     try {
       const offerData = await webrtcService.initiateSenderConnection();
       console.log('Offer created successfully');
-      
       try {
         const rawJsonSize = JSON.stringify(offerData).length;
         console.log(`Raw JSON data size: ${rawJsonSize} characters`);
         const dataChunks = splitConnectionData(offerData);
         console.log(`QR code data split into ${dataChunks.length} chunks`);
         dataChunks.forEach((chunk, index) => console.log(`Chunk ${index + 1} size: ${chunk.length} characters`));
-
         if (dataChunks.length === 1) {
           setOfferQrData(dataChunks[0]);
           setOfferQrDataChunks([]);
@@ -170,18 +168,17 @@ const WebRTCSendMoney: React.FC = () => {
       setShowScanner(false);
       return;
     }
-    
+
     try {
       if (!data || data.trim() === '') throw new Error('Invalid QR code: empty data');
-      
       if (data.startsWith('CHUNK:')) {
         const parts = data.split(':', 4);
         if (parts.length !== 4) throw new Error('Invalid chunk format');
-        
+
         const currentChunk = parseInt(parts[1]);
         const totalChunks = parseInt(parts[2]);
         const chunkData = parts[3];
-        
+
         console.log(`Received chunk ${currentChunk} of ${totalChunks}`);
         if (currentChunk === 1) {
           setScannedChunks([chunkData]);
@@ -191,7 +188,7 @@ const WebRTCSendMoney: React.FC = () => {
         } else {
           setScannedChunks(prev => [...prev, chunkData]);
         }
-        
+
         if (scannedChunks.length + 1 === totalChunks) {
           const allChunks = [...scannedChunks, chunkData];
           processAnswerData(allChunks);
@@ -215,7 +212,6 @@ const WebRTCSendMoney: React.FC = () => {
   const processAnswerData = async (chunks: string[]) => {
     setLoading(true);
     setError(null);
-    
     try {
       let answerData: WebRTCConnectionData;
       if (chunks.length > 1 || isMultiChunkMode) {
@@ -224,20 +220,20 @@ const WebRTCSendMoney: React.FC = () => {
       } else {
         answerData = decodeConnectionData(chunks[0]);
       }
-      
+
       console.log('Decoded answer data:', answerData);
       if (answerData.type !== 'answer') throw new Error('Invalid answer data: wrong type');
-      
+
       await webrtcService!.completeSenderConnection(answerData);
 
-      webrtcService!.onMessage((message) => {
+      webrtcService!.onMessage(async (message) => { // Added async here
         console.log('Received message:', message);
-        
+
         if (message.type === 'receipt') {
           console.log('Receipt received from receiver:', message);
-          
+
           const currentTransaction = transactionRef.current;
-      
+
           if (currentTransaction) {
             const updatedTransaction: Transaction = {
               ...currentTransaction,
@@ -245,11 +241,12 @@ const WebRTCSendMoney: React.FC = () => {
               status: message.status === 'success' ? 'completed' : 'failed'
             };
             setTransaction(updatedTransaction);
- 
+            await storageService.saveTransaction(updatedTransaction); // Save updated transaction
+
             if (message.status === 'success') {
               console.log('Success receipt received, completing payment process');
               const sentAmount = typeof amount === 'number' ? amount : 0;
-              
+
               if (sentAmount > 0) {
                 addToOfflineBalance(-sentAmount).then(() => {
                   toast({
@@ -286,7 +283,7 @@ const WebRTCSendMoney: React.FC = () => {
           console.log('WebRTC connection established');
           toast({ title: "Connection Established", description: "Connected to receiver device", duration: 3000 });
           setStep(SendMoneyStep.sending);
-          
+
           setTimeout(() => {
             if (amount === '' || !user?.email) {
               setError("Amount not set or user not identified before sending payment.");
@@ -303,7 +300,7 @@ const WebRTCSendMoney: React.FC = () => {
               note: note,
               transactionId: currentTransactionId
             };
-            
+
             const newTransaction: Transaction = {
               id: currentTransactionId,
               type: 'send',
@@ -315,7 +312,8 @@ const WebRTCSendMoney: React.FC = () => {
               receiptId: ''
             };
             setTransaction(newTransaction);
-            
+            storageService.saveTransaction(newTransaction); // Save initial transaction
+
             handlePaymentConfirmation(paymentData, newTransaction);
           }, 500);
         } else if (state === 'failed' || state === 'disconnected' || state === 'closed') {
@@ -346,26 +344,29 @@ const WebRTCSendMoney: React.FC = () => {
       setStep(SendMoneyStep.input);
       return;
     }
-    
+
     if (step === SendMoneyStep.complete || step === SendMoneyStep.receiptTimeout) {
       console.log('Payment already processed or timed out, skipping confirmation logic.');
       return;
     }
-    
+
     try {
       console.log('Confirming payment of', paymentData.amount);
       console.log('Current offline balance:', offlineBalance);
-      
+
       await webrtcService!.sendMessage(paymentData);
       console.log('Payment sent, waiting for receipt...');
       setStep(SendMoneyStep.waitForReceipt);
-      
+
       const receiptTimeoutId = setTimeout(() => {
-        if (transactionRef.current && transactionRef.current.id === currentTxForConfirmation.id && step === SendMoneyStep.waitForReceipt) { 
+        if (transactionRef.current && transactionRef.current.id === currentTxForConfirmation.id && step === SendMoneyStep.waitForReceipt) {
           console.warn('Receipt timeout occurred for transaction:', currentTxForConfirmation.id);
           setError("Receipt timeout. The payment may have been sent, but confirmation was not received. Please check with the recipient.");
-          
-          setTransaction({ ...currentTxForConfirmation, status: 'failed' });
+
+          const failedTransaction = { ...currentTxForConfirmation, status: 'failed' as const };
+          setTransaction(failedTransaction);
+          storageService.saveTransaction(failedTransaction); // Save failed transaction
+
           setStep(SendMoneyStep.receiptTimeout);
         }
       }, 30000);
@@ -374,11 +375,12 @@ const WebRTCSendMoney: React.FC = () => {
       console.error('Error sending payment message:', error);
       const errorMessage = error instanceof Error ? error.message : 'Unknown error';
       setError(`Failed to send payment message: ${errorMessage}`);
-      
       if (currentTxForConfirmation) {
-        setTransaction({ ...currentTxForConfirmation, status: 'failed' as const });
+        const failedTransaction = { ...currentTxForConfirmation, status: 'failed' as const };
+        setTransaction(failedTransaction);
+        storageService.saveTransaction(failedTransaction); // Save failed transaction
       }
-      
+
       toast({ title: "Payment Send Error", description: errorMessage, variant: "destructive", duration: 7000 });
       setStep(SendMoneyStep.input);
     }
@@ -393,7 +395,7 @@ const WebRTCSendMoney: React.FC = () => {
     setOfferQrDataChunks([]);
     setCurrentQrChunkIndex(0);
     setTransaction(null);
-    
+
     setScannedChunks([]);
     setTotalChunksExpected(null);
     setIsMultiChunkMode(false);
@@ -405,7 +407,7 @@ const WebRTCSendMoney: React.FC = () => {
       }
     }
   };
-  
+
   const handleCancelAndReset = () => {
     resetForm();
     setStep(SendMoneyStep.input);
@@ -431,7 +433,7 @@ const WebRTCSendMoney: React.FC = () => {
           </Button>
           <h1 className="text-2xl font-bold text-dark">Send Money (WebRTC)</h1>
         </div>
-        
+
         <WhiteCard className="p-6 max-w-md mx-auto">
           {step === SendMoneyStep.input && (
             <div className="space-y-6">
@@ -465,7 +467,7 @@ const WebRTCSendMoney: React.FC = () => {
               </GreenButton>
             </div>
           )}
-          
+
           {step === SendMoneyStep.createOffer && offerQrData && (
             <div className="space-y-6">
               <div className="text-center">
@@ -510,6 +512,7 @@ const WebRTCSendMoney: React.FC = () => {
               )}
             </div>
           )}
+
           {step === SendMoneyStep.sending && (
             <div className="space-y-6 text-center">
               <RefreshCw className="h-12 w-12 text-greenleaf-600 mx-auto animate-spin" />
@@ -542,10 +545,10 @@ const WebRTCSendMoney: React.FC = () => {
               )}
               {error && (<Alert variant="destructive" className="mt-4"><AlertTitle>Details</AlertTitle><AlertDescription>{error}</AlertDescription></Alert>)}
               <GreenButton onClick={() => navigate('/offline')} className="w-full mt-6">Okay</GreenButton>
-               <Button variant="outline" onClick={handleCancelAndReset} className="w-full mt-2">Try Another Payment</Button>
+              <Button variant="outline" onClick={handleCancelAndReset} className="w-full mt-2">Try Another Payment</Button>
             </div>
           )}
-          
+
           {step === SendMoneyStep.complete && transactionRef.current && (
             <div className="space-y-6">
               <div className="text-center mb-6">
