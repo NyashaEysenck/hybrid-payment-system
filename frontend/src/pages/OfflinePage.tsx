@@ -27,9 +27,12 @@ import { Transaction } from '@/types';
 // Import Transaction interface
 
 // Helper function to process transactions and show only the latest state
+// This function already handles keeping only one entry per transaction ID,
+// prioritizing status (completed > failed > pending) and then timestamp.
+// Thus, if two entries for the same ID are 'completed', it keeps the latest one.
 const processTransactions = (transactions: Transaction[]): Transaction[] => {
   const transactionMap = new Map<string, Transaction>();
-  const statusPriority = { completed: 3, failed: 2, pending: 1 };
+  const statusPriority: { [key: string]: number } = { completed: 3, failed: 2, pending: 1 };
 
   for (const tx of transactions) {
     const existingTx = transactionMap.get(tx.id);
@@ -55,11 +58,12 @@ const processTransactions = (transactions: Transaction[]): Transaction[] => {
 
 const OfflinePage = () => {
   const { balance, fetchWalletData } = useWallet();
-const { offlineBalance, pendingTransactions, refreshOfflineBalance, isOffline } = useOfflineBalance();
+  const { offlineBalance, pendingTransactions, refreshOfflineBalance, isOffline } = useOfflineBalance();
   const [isProcessing, setIsProcessing] = useState(false);
   const [offlineTransactions, setOfflineTransactions] = useState<Transaction[]>([]); // State to store transactions
   const navigate = useNavigate();
-const onlineBalance = isOffline ? "N/A" : Number(balance);
+  // Ensure onlineBalance is 'N/A' when offline
+  const onlineBalance = isOffline ? "N/A" : Number(balance);
 
   const resetDatabases = useCallback(async () => {
     setIsProcessing(true);
@@ -68,7 +72,7 @@ const onlineBalance = isOffline ? "N/A" : Number(balance);
       await new Promise<void>((resolve, reject) => {
         const deleteRequest = indexedDB.deleteDatabase('offline-payments');
         deleteRequest.onsuccess = () => {
-console.log('Database deleted successfully');
+          console.log('Database deleted successfully');
           resolve();
         };
         deleteRequest.onerror = () => {
@@ -76,22 +80,36 @@ console.log('Database deleted successfully');
           reject(new Error('Failed to delete database'));
         };
       });
-      window.location.reload();
-} catch (error) {
+      // Also reset the general app storage if needed, though offline payments is the primary one
+      // await new Promise<void>((resolve, reject) => {
+      //   const deleteRequest = indexedDB.deleteDatabase('app-storage'); // Example, adjust database name
+      //   deleteRequest.onsuccess = () => {
+      //     console.log('App storage database deleted successfully');
+      //     resolve();
+      //   };
+      //   deleteRequest.onerror = () => {
+      //     console.error('Error deleting app storage database');
+      //     reject(new Error('Failed to delete app storage database'));
+      //   };
+      // });
+
+      window.location.reload(); // Reload to ensure state is completely reset
+    } catch (error) {
       console.error('Error resetting databases:', error);
-      setIsProcessing(false);
+      setIsProcessing(false); // Stop processing animation if failed
     }
   }, []);
+
 
   useEffect(() => {
     const loadData = async () => {
       setIsProcessing(true);
       try {
         console.log('Loading data on OfflinePage...');
-        await fetchWalletData();
-        await refreshOfflineBalance();
+        await fetchWalletData(); // Fetch online balance (will be N/A if offline)
+        await refreshOfflineBalance(); // Fetch offline balance and pending transactions
         const transactions = await storageService.getTransactions(); // Fetch transactions
-        const processed = processTransactions(transactions); // Process transactions
+        const processed = processTransactions(transactions); // Process transactions to deduplicate and prioritize
         setOfflineTransactions(processed); // Set processed transactions state
         console.log('Data loaded successfully');
       } catch (error) {
@@ -101,7 +119,8 @@ console.log('Database deleted successfully');
       }
     };
     loadData();
-  }, [fetchWalletData, refreshOfflineBalance]);
+  }, [fetchWalletData, refreshOfflineBalance]); // Dependencies for useEffect
+
 
   return (
     <Layout>
@@ -110,23 +129,23 @@ console.log('Database deleted successfully');
         <div className="grid grid-cols-1">
           <WhiteCard className="p-6">
             <h2 className="text-xl font-semibold text-dark mb-6">Your Balances</h2>
-<div className="space-y-4">
+            <div className="space-y-4">
               <BalanceDisplay
                 amount={onlineBalance}
                 label="Online Balance"
                 type="primary"
               />
               <BalanceDisplay
-amount={isOffline ? offlineBalance : "N/A"}
+                amount={isOffline ? offlineBalance : "N/A"}
                 label="Offline Balance"
                 size="md"
                 type="secondary"
                 icon={<WifiOff size={16} />}
               />
-{pendingTransactions > 0 && (
+              {pendingTransactions > 0 && (
                 <div className="text-sm text-amber-600 mt-2">
                   You have {pendingTransactions} pending offline {pendingTransactions === 1 ?
-'transaction' : 'transactions'} to be synced
+                    'transaction' : 'transactions'} to be synced
                 </div>
               )}
             </div>
@@ -135,36 +154,36 @@ amount={isOffline ? offlineBalance : "N/A"}
 
         <WhiteCard className="p-6">
           <h2 className="text-xl font-semibold text-dark mb-6">WebRTC P2P Money Transfer</h2>
-<div className="space-y-4">
+          <div className="space-y-4">
             <button
               onClick={() => navigate("/webrtc-send-money")}
               className="group p-6 rounded-lg border border-gray-200 hover:border-greenleaf-300 transition-colors text-left w-full"
             >
               <div className="flex items-center gap-4">
-                <div className="w-12 h-12 rounded-full 
+                <div className="w-12 h-12 rounded-full
 bg-greenleaf-100 flex items-center justify-center group-hover:bg-greenleaf-200 transition-colors">
                   <Send size={24} className="text-greenleaf-600" />
                 </div>
                 <div>
                   <h3 className="font-semibold text-dark">Send Money</h3>
                   <p className="text-sm text-dark-lighter">
-Send money offline using WebRTC peer-to-peer connection
+                    Send money offline using WebRTC peer-to-peer connection
                   </p>
                 </div>
               </div>
             </button>
             <button
-onClick={() => navigate("/webrtc-receive-money")}
+              onClick={() => navigate("/webrtc-receive-money")}
               className="group p-6 rounded-lg border border-gray-200 hover:border-greenleaf-300 transition-colors text-left w-full"
             >
               <div className="flex items-center gap-4">
                 <div className="w-12 h-12 rounded-full bg-greenleaf-100 flex items-center justify-center group-hover:bg-greenleaf-200 transition-colors">
-<Wallet size={24} className="text-greenleaf-600" />
+                  <Wallet size={24} className="text-greenleaf-600" />
                 </div>
                 <div>
                   <h3 className="font-semibold text-dark">Receive Money</h3>
                   <p className="text-sm text-dark-lighter">
-Receive money offline using WebRTC peer-to-peer connection
+                    Receive money offline using WebRTC peer-to-peer connection
                   </p>
                 </div>
               </div>
@@ -172,77 +191,87 @@ Receive money offline using WebRTC peer-to-peer connection
           </div>
         </WhiteCard>
 
-<WhiteCard className="p-6">
-            <h2 className="text-xl font-semibold text-dark mb-6 flex items-center">
-                <History size={24} className="mr-2" />
-                Offline Transaction History
-            </h2>
-            <div className="space-y-4">
-{offlineTransactions.length === 0 ? (
-                    <p className="text-gray-500 text-sm">No offline transactions recorded yet.</p>
-                ) : (
-                    <div className="space-y-4">
-                        {offlineTransactions.map((tx) => (
-<div key={tx.id} className="border p-4 rounded-lg">
-                                <div className="flex justify-between items-center">
-<span className="font-semibold capitalize">{tx.type}</span>
-                                    <span className={`font-bold ${tx.type === 'send' ? 'text-red-600' : 'text-green-600'}`}>
-                                        {tx.type === 'send' ? '-' : '+'}${tx.amount.toFixed(2)}
-</span>
-                                </div>
-<div className="text-sm text-gray-500 mt-1">
-                                    {tx.type === 'send' ?
-`To: ${tx.recipient}` : `From: ${tx.sender}`}
-                                </div>
-                                {tx.note && (
-<div className="text-sm text-gray-500 mt-1">Note: {tx.note}</div>
-                                )}
-                                <div className="text-xs text-gray-400 mt-1">
-{new Date(tx.timestamp).toLocaleString()}
-                                </div>
-                                <div className={`text-sm mt-1 ${tx.status === 'completed' ?
-'text-green-600' : tx.status === 'failed' ? 'text-red-600' : 'text-amber-600'}`}>
-                                    Status: {tx.status}
-                                </div>
-</div>
-                        ))}
+        <WhiteCard className="p-6">
+          <h2 className="text-xl font-semibold text-dark mb-6 flex items-center">
+            <History size={24} className="mr-2" />
+            Offline Transaction History
+          </h2>
+          <div className="space-y-4">
+            {offlineTransactions.length === 0 ? (
+              <p className="text-gray-500 text-sm">No offline transactions recorded yet.</p>
+            ) : (
+              <div className="space-y-4">
+                {offlineTransactions.map((tx) => (
+                  <div key={tx.id} className="border p-4 rounded-lg">
+                    <div className="flex justify-between items-center">
+                      <span className="font-semibold capitalize">{tx.type}</span>
+                      <span className={`font-bold ${tx.type === 'send' ? 'text-red-600' : 'text-green-600'}`}>
+                        {tx.type === 'send' ? '-' : '+'}${tx.amount.toFixed(2)}
+                      </span>
                     </div>
-                )}
-            </div>
+                    <div className="text-sm text-gray-500 mt-1">
+                      {tx.type === 'send' ?
+                        `To: ${tx.recipient}` : `From: ${tx.sender}`}
+                    </div>
+                    {tx.note && (
+                      <div className="text-sm text-gray-500 mt-1">Note: {tx.note}</div>
+                    )}
+                    <div className="text-xs text-gray-400 mt-1">
+                      {new Date(tx.timestamp).toLocaleString()}
+                    </div>
+                    <div className={`text-sm mt-1 ${tx.status === 'completed' ?
+                      'text-green-600' : tx.status === 'failed' ? 'text-red-600' : 'text-amber-600'}`}>
+                      Status: {tx.status}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
         </WhiteCard>
 
-<WhiteCard className="p-6 bg-greenleaf-50 border-none">
+        <WhiteCard className="p-6 bg-greenleaf-50 border-none">
           <div className="flex items-start">
             <div className="mr-4 mt-1">
               <CreditCard size={24} className="text-greenleaf-600" />
             </div>
             <div>
               <h3 className="font-semibold text-dark">How WebRTC P2P Payments Work</h3>
-<p className="text-dark-lighter text-sm mt-1">
+              <p className="text-dark-lighter text-sm mt-1">
                 When you reserve tokens, you're setting aside funds specifically for offline use.
-These tokens are cryptographically signed and can be transferred via WebRTC
+                These tokens are cryptographically signed and can be transferred via WebRTC
                 even without an internet connection.
-Once you're back online,
+                Once you're back online,
                 the transactions will automatically sync with our servers.
-</p>
+              </p>
               <h4 className="font-semibold text-dark mt-3">Secure Peer-to-Peer Transactions</h4>
               <p className="text-dark-lighter text-sm mt-1">
                 Our WebRTC-based system allows two devices to transact completely offline:
                 <ul className="list-disc pl-5 mt-2 space-y-1">
-<li>Device A (Sender) creates a connection offer and displays it as a QR code</li>
+                  <li>Device A (Sender) creates a connection offer and displays it as a QR code</li>
                   <li>Device B (Receiver) scans the QR code and creates an answer QR code</li>
                   <li>Device A scans the answer QR code to establish a secure WebRTC connection</li>
-<li>Money is transferred directly between devices via the WebRTC data channel</li>
+                  <li>Money is transferred directly between devices via the WebRTC data channel</li>
                   <li>Both devices update their local balances and store transaction records</li>
                 </ul>
               </p>
             </div>
           </div>
         </WhiteCard>
+
+        {/* Optional: Add a reset button for debugging/testing */}
+        {/* <div className="text-center mt-8">
+          <button
+            onClick={resetDatabases}
+            className="text-red-600 hover:underline text-sm"
+            disabled={isProcessing}
+          >
+            {isProcessing ? 'Resetting...' : 'Reset Offline Data (for testing)'}
+          </button>
+        </div> */}
       </div>
     </Layout>
   );
 };
 
 export default OfflinePage;
-
