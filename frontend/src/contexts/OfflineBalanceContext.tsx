@@ -34,6 +34,14 @@ export const useOfflineBalance = () => {
   return context;
 };
 
+
+
+export const OfflineBalanceProvider: React.FC = ({ children }: { children: React.ReactNode }) => {
+  const [offlineBalance, setOfflineBalance] = useState(0);
+  const [pendingTransactions, setPendingTransactions] = useState(0);
+  const [isOffline, setIsOffline] = useState(false);
+  const { user } = useAuth();
+  const { toast } = useToast();
 // Add this function before the OfflineBalanceProvider component
 
 const updateOnlineBalance = async (email: string, balance: number) => {
@@ -68,12 +76,6 @@ const updateOnlineBalance = async (email: string, balance: number) => {
 };
 
 
-export const OfflineBalanceProvider: React.FC = ({ children }: { children: React.ReactNode }) => {
-  const [offlineBalance, setOfflineBalance] = useState(0);
-  const [pendingTransactions, setPendingTransactions] = useState(0);
-  const [isOffline, setIsOffline] = useState(false);
-  const { user } = useAuth();
-  const { toast } = useToast();
 
   const loadOfflineBalance = useCallback(async () => {
     if (!user?.email) return;
