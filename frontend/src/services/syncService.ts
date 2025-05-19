@@ -33,7 +33,7 @@ export const syncOfflineTransactions = async (
     try {
       // First check if the transaction already exists in the online database
       const checkResponse = await api.get(`/transactions/check/${transaction.id}`);
-      
+      console.log(checkResponse.data)
       if (checkResponse.data.exists) {
         // Transaction already exists in online database
         console.log(`Transaction ${transaction.id} already exists online, updating status`);

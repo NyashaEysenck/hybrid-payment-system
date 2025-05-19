@@ -79,15 +79,15 @@ export const OfflineBalanceProvider: React.FC = ({ children }: { children: React
             console.log(`Found ${offlineTransactions.length} offline transactions to sync`);
             
             // Sync each transaction
-       try {
+              try {
                 await syncOfflineTransactions(offlineTransactions);
-               
+                await storageService.clearTransactions();
 
               } catch (error) {
                 console.error(`Failed to sync transaction :`, error);
                 // Keep failed transactions in storage for next sync attempt
               }
-              await storageService.clearTransactions();
+              
           } else {
             console.log('No offline transactions to sync');
           }
