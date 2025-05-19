@@ -16,7 +16,7 @@ const WALLET_RESERVED_BALANCE_KEY = 'walletReservedBalance';
 const WALLET_LAST_UPDATED_KEY = 'walletLastUpdated';
 
 // Function to save wallet balances to localStorage
-const saveWalletDataToLocalStorage = (balance: number, reservedBalance: number) => {
+export const saveWalletDataToLocalStorage = (balance: number, reservedBalance: number) => {
   try {
     localStorage.setItem(WALLET_BALANCE_KEY, balance.toString());
     localStorage.setItem(WALLET_RESERVED_BALANCE_KEY, reservedBalance.toString());

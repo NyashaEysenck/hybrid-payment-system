@@ -126,5 +126,46 @@ router.post('/transfer-to-online', async (req, res) => {
 });
 
 
+// Add this endpoint before the module.exports line
+router.post('/update-balance', async (req, res) => {
+  try {
+    const { email, newBalance } = req.body;
+
+    // Validate input
+    if (!email) {
+      return res.status(400).json({ message: 'Email is required' });
+    }
+    if (!newBalance || typeof newBalance !== 'number') {
+      return res.status(400).json({ message: 'New balance must be a number' });
+    }
+
+    // Find the user
+    const user = await User.findOne({ email });
+    if (!user) {
+      return res.status(404).json({ message: 'User not found' });
+    }
+
+    // Update the balance
+    const updatedUser = await User.findOneAndUpdate(
+      { email },
+      { balance: newBalance },
+      { new: true }
+    );
+
+    res.json({
+      success: true,
+      message: 'Balance updated successfully',
+      balance: updatedUser.balance,
+      offlineCredits: updatedUser.offline_credits
+    });
+
+  } catch (error) {
+    console.error('Error updating balance:', error);
+    res.status(500).json({
+      message: 'Server error',
+      error: error.message
+    });
+  }
+});
 
 module.exports = router;

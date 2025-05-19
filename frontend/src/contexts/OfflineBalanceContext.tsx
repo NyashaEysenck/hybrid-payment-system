@@ -3,6 +3,7 @@ import React, { createContext, useContext, useState, useEffect, useCallback } fr
 import { useAuth } from '@/contexts/AuthContext';
 import { useToast } from '@/components/ui/use-toast';
 import { storageService } from '@/services/storageService';
+import { saveWalletDataToLocalStorage } from '@/contexts/WalletService';
 import api from '@/utils/api';
 import * as walletService from './WalletService';
 import { syncOfflineTransactions } from '@/services/syncService'; 
@@ -32,6 +33,25 @@ export const useOfflineBalance = () => {
   }
   return context;
 };
+
+// Add this function before the OfflineBalanceProvider component
+const updateOnlineBalance = async (email: string, balance: number) => {
+  try {
+    const response = await api.post('/wallet/update-balance', {
+      email,
+      newBalance: balance
+    });
+    
+    if (response.data.success) {
+      console.log('Online balance updated successfully:', response.data);
+    } else {
+      console.error('Failed to update online balance:', response.data);
+    }
+  } catch (error) {
+    console.error('Error updating online balance:', error);
+  }
+};
+
 
 export const OfflineBalanceProvider: React.FC = ({ children }: { children: React.ReactNode }) => {
   const [offlineBalance, setOfflineBalance] = useState(0);
@@ -70,33 +90,13 @@ export const OfflineBalanceProvider: React.FC = ({ children }: { children: React
           await storageService.saveOfflineBalance(balance, user.email);
           setOfflineBalance(balance);
         }
-      }else{
-        try {
-          // Get all offline transactions from storage
-          const offlineTransactions = await storageService.getTransactions();
-          
-          if (offlineTransactions.length > 0) {
-            console.log(`Found ${offlineTransactions.length} offline transactions to sync`);
-            
-            // Sync each transaction
-              try {
-                await syncOfflineTransactions(offlineTransactions);
-                await storageService.clearTransactions();
-
-              } catch (error) {
-                console.error(`Failed to sync transaction :`, error);
-                // Keep failed transactions in storage for next sync attempt
-              }
-              
-          } else {
-            console.log('No offline transactions to sync');
-          }
-        } catch (error) {
-         
-          console.error('Error retrieving or syncing offline transactions:', error);
-        }
+      }else {
+        // Save offline balance to localStorage
+        saveWalletDataToLocalStorage(offlineBalance, offlineBalance);
+        
+        // Update online balance
+        await updateOnlineBalance(user.email, offlineBalance);
       }
-      
       toast({
         title: isOffline ? 'Going online' : 'Going offline',
         description: isOffline ? 'Your offline balance will be synced with your online balance' : 'Your online balance has been copied to offline'
