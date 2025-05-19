@@ -120,7 +120,7 @@ export const OfflineBalanceProvider: React.FC = ({ children }: { children: React
       console.error('Error toggling offline mode:', error);
       toast({
         title: 'Error',
-        description: 'Failed to toggle offline mode',
+        description: 'Failed to toggle offline mode'+error,
         variant: 'destructive'
       });
       setIsOffline(false);
