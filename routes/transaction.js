@@ -284,4 +284,101 @@ router.post('/confirm/:id', async (req, res) => {
   }
 });
 
+// In routes/transaction.js
+router.post('/sync/batch', async (req, res) => {
+  try {
+    const { transactions } = req.body;
+    
+    if (!Array.isArray(transactions) || transactions.length === 0) {
+      return res.status(400).json({ error: 'No transactions provided' });
+    }
+
+    const results = [];
+    const session = await Transaction.startSession();
+
+    try {
+      await session.withTransaction(async () => {
+        for (const tx of transactions) {
+          try {
+            // Convert IndexedDB format to backend format
+            const backendTx = {
+              transaction_id: tx.id,
+              sender_id: tx.sender, // Will be converted to ObjectId later
+              receiver_id: tx.recipient, // Will be converted to ObjectId later
+              amount: tx.amount,
+              note: tx.note,
+              transaction_type: 'payment', // We'll always use 'payment' for offline transactions
+              status: 'pending',
+              created_at: new Date(tx.timestamp),
+              token_id: tx.receiptId,
+              sync_status: {
+                sender_synced: false,
+                receiver_synced: false
+              },
+              offline_method: tx.type
+            };
+
+            // Check if transaction exists
+            const existing = await Transaction.findOne({ transaction_id: tx.id });
+            if (existing) {
+              results.push({
+                id: tx.id,
+                status: 'skipped',
+                message: 'Transaction already exists'
+              });
+              continue;
+            }
+
+            // Find users
+            const senderUser = await User.findOne({ email: tx.sender });
+            const recipientUser = await User.findOne({ email: tx.recipient });
+
+            if (!senderUser || !recipientUser) {
+              results.push({
+                id: tx.id,
+                status: 'failed',
+                error: 'Sender or recipient not found'
+              });
+              continue;
+            }
+
+            // Convert email IDs to ObjectIds
+            backendTx.sender_id = senderUser._id;
+            backendTx.receiver_id = recipientUser._id;
+
+            // Create transaction
+            const newTx = new Transaction(backendTx);
+            await newTx.save({ session });
+
+            results.push({
+              id: tx.id,
+              status: 'success',
+              transaction: newTx
+            });
+          } catch (err) {
+            results.push({
+              id: tx.id,
+              status: 'failed',
+              error: err.message
+            });
+          }
+        }
+      });
+
+      res.json({ results });
+    } catch (error) {
+      await session.abortTransaction();
+      res.status(500).json({
+        error: 'Batch processing failed',
+        details: error.message
+      });
+    }
+  } catch (error) {
+    res.status(400).json({
+      error: 'Invalid request',
+      details: error.message
+    });
+  }
+});
+
 module.exports = router;
