@@ -35,20 +35,35 @@ export const useOfflineBalance = () => {
 };
 
 // Add this function before the OfflineBalanceProvider component
+
 const updateOnlineBalance = async (email: string, balance: number) => {
+  const { toast } = useToast();
+
   try {
     const response = await api.post('/wallet/update-balance', {
       email,
       newBalance: balance
     });
-    
+
     if (response.data.success) {
-      console.log('Online balance updated successfully:', response.data);
+      toast({
+        title: "Success",
+        description: "Online balance updated successfully",
+        variant: "default",
+      });
     } else {
-      console.error('Failed to update online balance:', response.data);
+      toast({
+        title: "Error",
+        description: "Failed to update online balance",
+        variant: "destructive",
+      });
     }
   } catch (error) {
-    console.error('Error updating online balance:', error);
+    toast({
+      title: "Error",
+      description: "An error occurred while updating online balance",
+      variant: "destructive",
+    });
   }
 };
 
