@@ -84,50 +84,59 @@ const updateOnlineBalance = async (email: string, balance: number) => {
   }, [user?.email]);
 
   const toggleOfflineMode = useCallback(async () => {
-    if (!user?.email) return;
-    
-    try {
-      // Toggle offline mode
-      setIsOffline(!isOffline);
-      // Save the new state to storage 
-      localStorage.setItem('offlineMode', (!isOffline).toString());
+  if (!user?.email) return;
+  
+  try {
+    const newOfflineMode = !isOffline;
+    setIsOffline(newOfflineMode);
+    localStorage.setItem('offlineMode', newOfflineMode.toString());
 
+    if (newOfflineMode) {
+      // Going offline - copy online balance to offline
+      const walletData = await walletService.fetchWalletData();
+      const balance = walletData.balance || 0;
+      await storageService.saveOfflineBalance(balance, user.email);
+      setOfflineBalance(balance);
+    } else {
+      // Going online - sync offline balance to server
+      const currentOfflineBalance = await storageService.getOfflineBalance(user.email);
       
-      // When going offline, copy online balance to offline
-      if (!isOffline) {
-        try {
-          const onlineBalance = await api.post('/wallet/balance', { email: user.email });
-          const balance = onlineBalance.data.balance || 0;
-          await storageService.saveOfflineBalance(balance, user.email);
-          setOfflineBalance(balance);
-        } catch (error) {
-          console.error('Failed to get balance from API, falling back to fetchWalletData:', error);
-          const walletData = await walletService.fetchWalletData();
-          const balance = walletData.balance || 0;
-          await storageService.saveOfflineBalance(balance, user.email);
-          setOfflineBalance(balance);
-        }
-      }else {
-        // Save offline balance to localStorage
-        saveWalletDataToLocalStorage(offlineBalance, offlineBalance);
-        
-        // Update online balance
-        await updateOnlineBalance(user.email, offlineBalance);
+      // Validate balance before saving
+      if (typeof currentOfflineBalance !== 'number' || isNaN(currentOfflineBalance)) {
+        throw new Error('Invalid offline balance');
       }
-      toast({
-        title: isOffline ? 'Going online' : 'Going offline',
-        description: isOffline ? 'Your offline balance will be synced with your online balance' : 'Your online balance has been copied to offline'
-      });
-    } catch (error) {
-      console.error('Error toggling offline mode:', error);
-      toast({
-        title: 'Error',
-        description: 'Failed to toggle offline mode',
-        variant: 'destructive'
-      });
-      setIsOffline(false);
+
+      // Save to localStorage (with error handling)
+      try {
+        saveWalletDataToLocalStorage(currentOfflineBalance, currentOfflineBalance);
+      } catch (storageError) {
+        console.error('Failed to save to localStorage:', storageError);
+        // Optionally clear old data if quota is exceeded
+        localStorage.removeItem(WALLET_BALANCE_KEY);
+        localStorage.removeItem(WALLET_RESERVED_BALANCE_KEY);
+        saveWalletDataToLocalStorage(currentOfflineBalance, currentOfflineBalance);
+      }
+
+      // Update server balance
+      await updateOnlineBalance(user.email, currentOfflineBalance);
     }
-  }, [user?.email, isOffline]);
+
+    toast({
+      title: newOfflineMode ? 'Offline mode activated' : 'Online mode activated',
+      description: newOfflineMode 
+        ? 'Your online balance has been copied to offline' 
+        : 'Your offline balance has been synced with online'
+    });
+  } catch (error) {
+    console.error('Toggle error:', error);
+    setIsOffline(isOffline); // Revert state on failure
+    toast({
+      title: 'Error',
+      description: error.message,
+      variant: 'destructive'
+    });
+  }
+}, [user?.email, isOffline, toast]);
 
   useEffect(() => {
     loadOfflineBalance();
