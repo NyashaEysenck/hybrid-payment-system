@@ -13,8 +13,6 @@ import { toast } from '@/components/ui/use-toast';
  */
 export const syncOfflineTransactions = async (
   transactions: Transaction[],
-  updateTransaction: (transaction: Transaction) => Promise<Transaction>,
-  deleteTransaction: (id: string) => Promise<void>,
   refreshOfflineBalance?: () => Promise<void>
 ): Promise<{ synced: number; pending: number; failed: number }> => {
   // Filter only offline transactions

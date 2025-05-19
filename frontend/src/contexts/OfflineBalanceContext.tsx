@@ -1,9 +1,11 @@
 // In OfflineBalanceContext.tsx
 import React, { createContext, useContext, useState, useEffect, useCallback } from 'react';
 import { useAuth } from '@/contexts/AuthContext';
-import { storageService } from '@/services/storageService';
 import { useToast } from '@/components/ui/use-toast';
+import { storageService } from '@/services/storageService';
 import api from '@/utils/api';
+import * as walletService from './WalletService';
+import { syncOfflineTransactions } from '@/services/syncService'; 
 
 interface OfflineBalanceContextType {
   offlineBalance: number;
@@ -11,7 +13,6 @@ interface OfflineBalanceContextType {
   isOffline: boolean;
   toggleOfflineMode: () => Promise<void>;
   refreshOfflineBalance: () => Promise<number>;
-  syncOfflineCredits: () => Promise<number>;
   addToOfflineBalance: (amount: number) => Promise<number>;
 }
 
@@ -21,7 +22,6 @@ const OfflineBalanceContext = createContext<OfflineBalanceContextType>({
   isOffline: false,
   toggleOfflineMode: async () => {},
   refreshOfflineBalance: async () => 0,
-  syncOfflineCredits: async () => 0,
   addToOfflineBalance: async () => 0,
 });
 
@@ -58,10 +58,43 @@ export const OfflineBalanceProvider: React.FC = ({ children }: { children: React
       
       // When going offline, copy online balance to offline
       if (!isOffline) {
-        const onlineBalance = await api.post('/wallet/balance', { email: user.email });
-        const balance = onlineBalance.data.balance || 0;
-        await storageService.saveOfflineBalance(balance, user.email);
-        setOfflineBalance(balance);
+        try {
+          const onlineBalance = await api.post('/wallet/balance', { email: user.email });
+          const balance = onlineBalance.data.balance || 0;
+          await storageService.saveOfflineBalance(balance, user.email);
+          setOfflineBalance(balance);
+        } catch (error) {
+          console.error('Failed to get balance from API, falling back to fetchWalletData:', error);
+          const walletData = await walletService.fetchWalletData();
+          const balance = walletData.balance || 0;
+          await storageService.saveOfflineBalance(balance, user.email);
+          setOfflineBalance(balance);
+        }
+      }else{
+        try {
+          // Get all offline transactions from storage
+          const offlineTransactions = await storageService.getTransactions();
+          
+          if (offlineTransactions.length > 0) {
+            console.log(`Found ${offlineTransactions.length} offline transactions to sync`);
+            
+            // Sync each transaction
+       try {
+                await syncOfflineTransactions(offlineTransactions);
+               
+
+              } catch (error) {
+                console.error(`Failed to sync transaction :`, error);
+                // Keep failed transactions in storage for next sync attempt
+              }
+              await storageService.clearTransactions();
+          } else {
+            console.log('No offline transactions to sync');
+          }
+        } catch (error) {
+         
+          console.error('Error retrieving or syncing offline transactions:', error);
+        }
       }
       
       toast({
@@ -158,18 +191,7 @@ export const OfflineBalanceProvider: React.FC = ({ children }: { children: React
     }
   }, [user?.email, toast]);
 
-  // For backward compatibility
-  const updateOfflineBalance = async (amount: number) => {
-    await addToOfflineBalance(amount);
-    return amount;
-  };
-
   // Placeholder for sync functionality
-  const syncOfflineCredits = useCallback(async () => {
-    // This would sync with the server if needed
-    return refreshOfflineBalance();
-  }, [refreshOfflineBalance]);
-
   // Load initial balance
   useEffect(() => {
     if (user?.email) {
@@ -184,7 +206,6 @@ export const OfflineBalanceProvider: React.FC = ({ children }: { children: React
         pendingTransactions,
         isOffline,
         refreshOfflineBalance,
-        syncOfflineCredits,
         toggleOfflineMode,
         addToOfflineBalance
       }}

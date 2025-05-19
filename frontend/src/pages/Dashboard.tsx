@@ -50,7 +50,7 @@ const Dashboard = () => {
             <h2 className="text-xl font-semibold text-dark mb-6">Balance Summary</h2>
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <BalanceDisplay 
-                amount={balance}
+                amount={isOffline ? "N/A" : balance}
                 label="Online Balance" 
                 size="md" 
                 type="secondary" 
