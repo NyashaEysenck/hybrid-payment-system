@@ -160,15 +160,35 @@ export class IndexedDBStorageService implements StorageService {
     });
   }
 
-  async saveTransaction(tx: Transaction): Promise<void> {
+  async async saveTransaction(tx: Transaction): Promise<void> {
+    // First get all existing transactions
+    const existingTransactions = await this.getTransactions();
+    
+    // Check for duplicates (same amount within 10 seconds)
+    const isDuplicate = existingTransactions.some(existingTx => {
+        const timeDiff = Math.abs(existingTx.timestamp - tx.timestamp);
+        return (
+            existingTx.amount === tx.amount && 
+            timeDiff <= 10000 && // 10 seconds in milliseconds
+            existingTx.type === tx.type &&
+            existingTx.sender === tx.sender &&
+            existingTx.recipient === tx.recipient
+        );
+    });
+
+    if (isDuplicate) {
+        console.log('Skipping duplicate transaction:', tx);
+        return Promise.resolve();
+    }
+
     const store = await this.getStore(IndexedDBStorageService.TX_STORE, 'readwrite');
     
     return new Promise((resolve, reject) => {
-      const request = store.put(tx);
-      request.onsuccess = () => resolve();
-      request.onerror = (event) => reject(event);
+        const request = store.put(tx);
+        request.onsuccess = () => resolve();
+        request.onerror = (event) => reject(event);
     });
-  }
+}
 
   async getTransactions(): Promise<Transaction[]> {
     const store = await this.getStore(IndexedDBStorageService.TX_STORE);
