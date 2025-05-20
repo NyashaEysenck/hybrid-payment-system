@@ -33,7 +33,6 @@ import { Transaction } from '@/types';
 const processTransactions = (transactions: Transaction[]): Transaction[] => {
   const transactionMap = new Map<string, Transaction>();
   const statusPriority: { [key: string]: number } = { completed: 3, failed: 2, pending: 1 };
-
   for (const tx of transactions) {
     const existingTx = transactionMap.get(tx.id);
     if (!existingTx) {
@@ -43,7 +42,6 @@ const processTransactions = (transactions: Transaction[]): Transaction[] => {
       // if it has the same status but a more recent timestamp, update it.
       const currentTxPriority = statusPriority[tx.status] ?? 0;
       const existingTxPriority = statusPriority[existingTx.status] ?? 0;
-
       if (currentTxPriority > existingTxPriority) {
         transactionMap.set(tx.id, tx);
       } else if (currentTxPriority === existingTxPriority && tx.timestamp > existingTx.timestamp) {
@@ -60,11 +58,11 @@ const OfflinePage = () => {
   const { balance, fetchWalletData } = useWallet();
   const { offlineBalance, pendingTransactions, refreshOfflineBalance, isOffline } = useOfflineBalance();
   const [isProcessing, setIsProcessing] = useState(false);
-  const [offlineTransactions, setOfflineTransactions] = useState<Transaction[]>([]); // State to store transactions
+  const [offlineTransactions, setOfflineTransactions] = useState<Transaction[]>([]);
+  // State to store transactions
   const navigate = useNavigate();
   // Ensure onlineBalance is 'N/A' when offline
   const onlineBalance = isOffline ? "N/A" : Number(balance);
-
   const resetDatabases = useCallback(async () => {
     setIsProcessing(true);
     try {
@@ -93,14 +91,13 @@ const OfflinePage = () => {
       //   };
       // });
 
-      window.location.reload(); // Reload to ensure state is completely reset
+      window.location.reload();
+      // Reload to ensure state is completely reset
     } catch (error) {
       console.error('Error resetting databases:', error);
       setIsProcessing(false); // Stop processing animation if failed
     }
   }, []);
-
-
   useEffect(() => {
     const loadData = async () => {
       setIsProcessing(true);
@@ -119,7 +116,8 @@ const OfflinePage = () => {
       }
     };
     loadData();
-  }, [fetchWalletData, refreshOfflineBalance]); // Dependencies for useEffect
+  }, [fetchWalletData, refreshOfflineBalance]);
+  // Dependencies for useEffect
 
 
   return (
@@ -153,27 +151,26 @@ const OfflinePage = () => {
         </div>
 
         <WhiteCard className="p-6">
-          <h2 className="text-xl font-semibold text-dark mb-6">WebRTC P2P Money Transfer</h2>
+          <h2 className="text-xl font-semibold text-dark mb-6">QR Code Transfer</h2>
           <div className="space-y-4">
             <button
-              onClick={() => navigate("/webrtc-send-money")}
+              onClick={() => navigate("/webrtc-send-money")} // Assuming the route remains the same internally
               className="group p-6 rounded-lg border border-gray-200 hover:border-greenleaf-300 transition-colors text-left w-full"
             >
               <div className="flex items-center gap-4">
-                <div className="w-12 h-12 rounded-full
-bg-greenleaf-100 flex items-center justify-center group-hover:bg-greenleaf-200 transition-colors">
+                <div className="w-12 h-12 rounded-full bg-greenleaf-100 flex items-center justify-center group-hover:bg-greenleaf-200 transition-colors">
                   <Send size={24} className="text-greenleaf-600" />
                 </div>
                 <div>
                   <h3 className="font-semibold text-dark">Send Money</h3>
                   <p className="text-sm text-dark-lighter">
-                    Send money offline using WebRTC peer-to-peer connection
+                    Send money offline using QR code transfer
                   </p>
                 </div>
               </div>
             </button>
             <button
-              onClick={() => navigate("/webrtc-receive-money")}
+              onClick={() => navigate("/webrtc-receive-money")} // Assuming the route remains the same internally
               className="group p-6 rounded-lg border border-gray-200 hover:border-greenleaf-300 transition-colors text-left w-full"
             >
               <div className="flex items-center gap-4">
@@ -183,7 +180,7 @@ bg-greenleaf-100 flex items-center justify-center group-hover:bg-greenleaf-200 t
                 <div>
                   <h3 className="font-semibold text-dark">Receive Money</h3>
                   <p className="text-sm text-dark-lighter">
-                    Receive money offline using WebRTC peer-to-peer connection
+                    Receive money offline using QR code transfer
                   </p>
                 </div>
               </div>
@@ -219,8 +216,7 @@ bg-greenleaf-100 flex items-center justify-center group-hover:bg-greenleaf-200 t
                     <div className="text-xs text-gray-400 mt-1">
                       {new Date(tx.timestamp).toLocaleString()}
                     </div>
-                    <div className={`text-sm mt-1 ${tx.status === 'completed' ?
-                      'text-green-600' : tx.status === 'failed' ? 'text-red-600' : 'text-amber-600'}`}>
+                    <div className={`text-sm mt-1 ${tx.status === 'completed' ? 'text-green-600' : tx.status === 'failed' ? 'text-red-600' : 'text-amber-600'}`}>
                       Status: {tx.status}
                     </div>
                   </div>
@@ -233,27 +229,122 @@ bg-greenleaf-100 flex items-center justify-center group-hover:bg-greenleaf-200 t
         <WhiteCard className="p-6 bg-greenleaf-50 border-none">
           <div className="flex items-start">
             <div className="mr-4 mt-1">
-              <CreditCard size={24} className="text-greenleaf-600" />
+              <QrCode size={24} className="text-greenleaf-600" />
             </div>
             <div>
-              <h3 className="font-semibold text-dark">How WebRTC P2P Payments Work</h3>
+              <h3 className="font-semibold text-dark">How QR Code Offline Transfer Works</h3>
+               <h4 className="font-semibold text-dark mt-3">Important: Offline Mode Requirements</h4>
               <p className="text-dark-lighter text-sm mt-1">
-                When you reserve tokens, you're setting aside funds specifically for offline use.
-                These tokens are cryptographically signed and can be transferred via WebRTC
-                even without an internet connection.
-                Once you're back online,
-                the transactions will automatically sync with our servers.
-              </p>
-              <h4 className="font-semibold text-dark mt-3">Secure Peer-to-Peer Transactions</h4>
-              <p className="text-dark-lighter text-sm mt-1">
-                Our WebRTC-based system allows two devices to transact completely offline:
+                Before attempting any QR code offline transfers:
                 <ul className="list-disc pl-5 mt-2 space-y-1">
-                  <li>Device A (Sender) creates a connection offer and displays it as a QR code</li>
-                  <li>Device B (Receiver) scans the QR code and creates an answer QR code</li>
-                  <li>Device A scans the answer QR code to establish a secure WebRTC connection</li>
-                  <li>Money is transferred directly between devices via the WebRTC data channel</li>
-                  <li>Both devices update their local balances and store transaction records</li>
+                  <li>Toggle to Offline Mode:
+                    <ul className="list-disc pl-5">
+                        <li>Click the "Offline Mode" toggle in the navbar or sidebar</li>
+                        <li>Ensure your offline balance is greater than 0</li>
+                        <li>You'll see "Offline Mode" indicator in the UI</li>
+                    </ul>
+                  </li>
+                  <li>After completing all offline transfers:
+                    <ul className="list-disc pl-5">
+                        <li>Toggle back to Online Mode</li>
+                        <li>Your transactions will sync with the server</li>
+                        <li>Your balances will be reconciled</li>
+                    </ul>
+                  </li>
                 </ul>
+              </p>
+              <h4 className="font-semibold text-dark mt-3">Steps to Perform QR Code Offline Transfer</h4>
+              <p className="text-dark-lighter text-sm mt-1">
+                <strong>For the Payer (Sending Money):</strong>
+                <ol className="list-decimal pl-5 mt-2 space-y-1">
+                  <li>Prepare Payment:
+                    <ul className="list-disc pl-5">
+                        <li>Go to "Send Money" page</li>
+                        <li>Enter the payment amount</li>
+                        <li>Click "Generate QR Code"</li>
+                    </ul>
+                  </li>
+                  <li>QR Code Exchange:
+                    <ul className="list-disc pl-5">
+                        <li>If data is large, system will split into multiple QR codes</li>
+                        <li>Show first QR code to payee</li>
+                        <li>Wait for payee to scan all QR codes in order</li>
+                    </ul>
+                  </li>
+                  <li>Receive Answer:
+                    <ul className="list-disc pl-5">
+                        <li>Wait for payee's answer QR code</li>
+                        <li>If split into chunks:
+                            <ul className="list-disc pl-5">
+                                <li>Scan first chunk QR code</li>
+                                <li>Wait for remaining chunks</li>
+                                <li>Scan all chunks in order</li>
+                            </ul>
+                        </li>
+                        <li>If single QR code:
+                            <ul className="list-disc pl-5">
+                                <li>Scan single answer QR code</li>
+                            </ul>
+                        </li>
+                    </ul>
+                  </li>
+                  <li>Completion:
+                     <ul className="list-disc pl-5">
+                        <li>Wait for payment confirmation</li>
+                        <li>Your offline balance updates automatically</li>
+                    </ul>
+                  </li>
+                </ol>
+              </p>
+              <p className="text-dark-lighter text-sm mt-1">
+                <strong>For the Payee (Receiving Money):</strong>
+                <ol className="list-decimal pl-5 mt-2 space-y-1">
+                  <li>Receive Payment:
+                    <ul className="list-disc pl-5">
+                        <li>Go to "Receive Money" page</li>
+                        <li>Click "Scan QR Code"</li>
+                    </ul>
+                  </li>
+                  <li>QR Code Exchange:
+                    <ul className="list-disc pl-5">
+                        <li>If payer's QR code is split:
+                            <ul className="list-disc pl-5">
+                                <li>Scan first chunk QR code</li>
+                                <li>Wait for remaining chunks</li>
+                                <li>Scan all chunks in order</li>
+                            </ul>
+                        </li>
+                        <li>If single QR code:
+                            <ul className="list-disc pl-5">
+                                <li>Scan single QR code</li>
+                            </ul>
+                        </li>
+                    </ul>
+                  </li>
+                  <li>Send Answer:
+                    <ul className="list-disc pl-5">
+                        <li>System generates answer QR code</li>
+                        <li>If split into chunks:
+                            <ul className="list-disc pl-5">
+                                <li>Show first answer QR code</li>
+                                <li>Wait for payer to scan first QR code</li>
+                            </ul>
+                        </li>
+                        <li>If single QR code:
+                            <ul className="list-disc pl-5">
+                                <li>Show single answer QR code</li>
+                                <li>Wait for payer to scan QR code</li>
+                            </ul>
+                        </li>
+                    </ul>
+                  </li>
+                  <li>Completion:
+                    <ul className="list-disc pl-5">
+                        <li>Wait for payment to be processed</li>
+                        <li>Your offline balance updates automatically</li>
+                    </ul>
+                  </li>
+                </ol>
               </p>
             </div>
           </div>
