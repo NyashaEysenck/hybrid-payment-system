@@ -94,9 +94,15 @@ const OfflinePage = () => {
     // Check if we're transitioning from offline to online
     if (prevIsOfflineRef.current === true && isOffline === false) {
       console.log('Detected transition from offline to online, refreshing wallet data...');
-      fetchWalletData().catch(error => {
-        console.error('Error refreshing wallet data after going online:', error);
-      });
+      const refreshData = async () => {
+        try {
+          await fetchWalletData();
+          console.log('Wallet data refreshed after coming online');
+        } catch (error) {
+          console.error('Error refreshing wallet data after going online:', error);
+        }
+      };
+      refreshData();
     }
     
     // Update the ref to track the current value for the next render
