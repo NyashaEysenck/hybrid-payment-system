@@ -1,8 +1,9 @@
+// WebRTCSendMoney.tsx
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import Layout from "@/components/Layout";
 import WhiteCard from "@/components/WhiteCard";
 import { useAuth } from '@/contexts/AuthContext';
-import { useWallet } from '@/contexts/WalletContext';
+import { useWallet } from '@/contexts/Wallet/WalletContext';
 import { useOfflineBalance } from '@/contexts/OfflineBalanceContext';
 import { useNavigate } from 'react-router-dom';
 import QRCode from 'react-qr-code';
@@ -51,6 +52,7 @@ const WebRTCSendMoney: React.FC = () => {
   const { offlineBalance, refreshOfflineBalance, addToOfflineBalance } = useOfflineBalance();
   const navigate = useNavigate();
   const { toast } = useToast();
+
   const [step, setStep] = useState<SendMoneyStep>(SendMoneyStep.input);
   const [amount, setAmount] = useState<number | ''>('');
   const [recipientId, setRecipientId] = useState('');
@@ -66,24 +68,15 @@ const WebRTCSendMoney: React.FC = () => {
   const [scannedChunks, setScannedChunks] = useState<string[]>([]);
   const [totalChunksExpected, setTotalChunksExpected] = useState<number | null>(null);
   const [isMultiChunkMode, setIsMultiChunkMode] = useState(false);
-  
-  const transactionRef = useRef<Transaction | null>(null);
-  const transactionIdRef = useRef<string | null>(null);
 
+  const transactionRef = useRef<Transaction | null>(null);
   const setTransaction = (tx: Transaction | null) => {
     transactionRef.current = tx;
     _setTransaction(tx);
-    if (tx) {
-      transactionIdRef.current = tx.id;
-    } else {
-      transactionIdRef.current = null;
-    }
   };
 
-  const saveTransactionWithLog = async (tx: Transaction) => {
-    console.log(`Saving transaction ${tx.id} with status ${tx.status}`);
-    await storageService.saveTransaction(tx);
-  };
+  // Persist transaction ID using useRef
+  const transactionIdRef = useRef<string | null>(null);
 
   useEffect(() => {
     if (user?.email) {
@@ -246,21 +239,22 @@ const WebRTCSendMoney: React.FC = () => {
           console.log('Receipt received from receiver:', message);
 
           const currentTransaction = transactionRef.current;
-          if (!currentTransaction) {
-            console.error('No transaction found when receipt received');
-            setError('Receipt received but no transaction found');
-            return;
-          }
 
-          // Only proceed if status is still pending
-          if (currentTransaction.status === 'pending') {
+          if (currentTransaction) {
+            // Avoid saving failed states multiple times
+            if (currentTransaction.status === 'failed' && message.status !== 'success') {
+              console.log(`Transaction ${currentTransaction.id} already failed, skipping save.`);
+              return;
+            }
+
             const updatedTransaction: Transaction = {
               ...currentTransaction,
               receiptId: message.receiptId,
               status: message.status === 'success' ? 'completed' : 'failed'
             };
             setTransaction(updatedTransaction);
-            await saveTransactionWithLog(updatedTransaction);
+            console.log(`Logging transaction ID before saving (receipt): ${updatedTransaction.id}`);
+            await storageService.saveTransaction(updatedTransaction); // Save updated transaction
 
             if (message.status === 'success') {
               console.log('Success receipt received, completing payment process');
@@ -289,7 +283,9 @@ const WebRTCSendMoney: React.FC = () => {
               setStep(SendMoneyStep.input);
             }
           } else {
-            console.log(`Receipt received but transaction status is already ${currentTransaction.status}, skipping update`);
+            console.error('Receipt received but no transaction found locally (via ref). This might indicate a desync or earlier error.');
+            setError('Receipt received, but local transaction context was lost. Please verify with recipient.');
+            setStep(SendMoneyStep.input);
           }
         }
       });
@@ -308,8 +304,12 @@ const WebRTCSendMoney: React.FC = () => {
               return;
             }
 
-            // Use existing transaction ID if available, otherwise generate new one
-            const currentTransactionId = transactionIdRef.current || uuidv4();
+            // Ensure transaction ID is set only once and reused consistently
+            if (!transactionIdRef.current) {
+              transactionIdRef.current = uuidv4(); // Set only if not already set
+            }
+            const currentTransactionId = transactionIdRef.current;
+
             const paymentData = {
               type: 'payment',
               amount: amount,
@@ -332,18 +332,22 @@ const WebRTCSendMoney: React.FC = () => {
               receiptId: '',
               synced: false
             };
-
-            // Only set and save transaction if not already set
-            if (!transactionRef.current) {
-              setTransaction(newTransaction);
-              saveTransactionWithLog(newTransaction);
-            }
+            setTransaction(newTransaction);
+            console.log(`Logging transaction ID before saving (initial): ${newTransaction.id}`);
+            storageService.saveTransaction(newTransaction); // Save initial transaction
 
             handlePaymentConfirmation(paymentData, newTransaction);
           }, 500);
         } else if (state === 'failed' || state === 'disconnected' || state === 'closed') {
           console.log('WebRTC connection lost:', state);
+          // Only set error and reset if the current step is not complete or timed out,
+          // AND the transaction status is not 'completed'.
           if (step !== SendMoneyStep.complete && step !== SendMoneyStep.receiptTimeout && transactionRef.current?.status !== 'completed') {
+            // Avoid saving failed states multiple times
+            if (transactionRef.current && transactionRef.current.status !== 'failed') {
+              console.log(`Logging transaction ID before saving (connection lost): ${transactionRef.current.id}`);
+              storageService.saveTransaction({ ...transactionRef.current, status: 'failed' as const }); // Save failed transaction
+            }
             setError('Connection lost. Please try again.');
             setStep(SendMoneyStep.createOffer);
           }
@@ -383,16 +387,17 @@ const WebRTCSendMoney: React.FC = () => {
       setStep(SendMoneyStep.waitForReceipt);
 
       const receiptTimeoutId = setTimeout(() => {
-        if (transactionRef.current && 
-            transactionRef.current.id === currentTxForConfirmation.id && 
-            step === SendMoneyStep.waitForReceipt && 
-            transactionRef.current.status === 'pending') {
+        if (transactionRef.current && transactionRef.current.id === currentTxForConfirmation.id && step === SendMoneyStep.waitForReceipt) {
           console.warn('Receipt timeout occurred for transaction:', currentTxForConfirmation.id);
           setError("Receipt timeout. The payment may have been sent, but confirmation was not received. Please check with the recipient.");
 
-          const failedTransaction = { ...currentTxForConfirmation, status: 'failed' as const };
-          setTransaction(failedTransaction);
-          saveTransactionWithLog(failedTransaction);
+          // Avoid saving failed states multiple times
+          if (transactionRef.current.status !== 'failed') {
+            const failedTransaction = { ...currentTxForConfirmation, status: 'failed' as const };
+            setTransaction(failedTransaction);
+            console.log(`Logging transaction ID before saving (receipt timeout): ${failedTransaction.id}`);
+            storageService.saveTransaction(failedTransaction); // Save failed transaction
+          }
           setStep(SendMoneyStep.receiptTimeout);
         }
       }, 30000);
@@ -400,11 +405,14 @@ const WebRTCSendMoney: React.FC = () => {
       console.error('Error sending payment message:', error);
       const errorMessage = error instanceof Error ? error.message : 'Unknown error';
       setError(`Failed to send payment message: ${errorMessage}`);
-      
-      if (currentTxForConfirmation && currentTxForConfirmation.status === 'pending') {
-        const failedTransaction = { ...currentTxForConfirmation, status: 'failed' as const };
-        setTransaction(failedTransaction);
-        saveTransactionWithLog(failedTransaction);
+      if (currentTxForConfirmation) {
+        // Avoid saving failed states multiple times
+        if (currentTxForConfirmation.status !== 'failed') {
+          const failedTransaction = { ...currentTxForConfirmation, status: 'failed' as const };
+          setTransaction(failedTransaction);
+          console.log(`Logging transaction ID before saving (send error): ${failedTransaction.id}`);
+          storageService.saveTransaction(failedTransaction); // Save failed transaction
+        }
       }
 
       toast({ title: "Payment Send Error", description: errorMessage, variant: "destructive", duration: 7000 });
@@ -421,6 +429,7 @@ const WebRTCSendMoney: React.FC = () => {
     setOfferQrDataChunks([]);
     setCurrentQrChunkIndex(0);
     setTransaction(null);
+    transactionIdRef.current = null; // Clear the transaction ID on reset
     setScannedChunks([]);
     setTotalChunksExpected(null);
     setIsMultiChunkMode(false);
@@ -473,21 +482,45 @@ const WebRTCSendMoney: React.FC = () => {
                   <Label htmlFor="amount">Amount</Label>
                   <div className="relative">
                     <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-500">$</span>
-                    <Input id="amount" type="number" min="0.01" step="0.01" value={amount === '' ? '' : amount.toString()} onChange={handleAmountChange} placeholder="0.00" className="pl-8 text-lg" />
+                    <Input
+                      id="amount"
+                      type="number"
+                      min="0.01"
+                      step="0.01"
+                      value={amount === '' ? '' : amount.toString()}
+                      onChange={handleAmountChange}
+                      placeholder="0.00"
+                      className="pl-8 text-lg"
+                    />
                   </div>
                   <p className="text-xs text-gray-500">Available offline balance: ${offlineBalance.toFixed(2)}</p>
                 </div>
                 <div className="space-y-2">
                   <Label htmlFor="recipient">Recipient ID (Optional)</Label>
-                  <Input id="recipient" value={recipientId} onChange={(e) => setRecipientId(e.target.value)} placeholder="Enter recipient ID or name" />
+                  <Input
+                    id="recipient"
+                    value={recipientId}
+                    onChange={(e) => setRecipientId(e.target.value)}
+                    placeholder="Enter recipient ID or name"
+                  />
                 </div>
                 <div className="space-y-2">
                   <Label htmlFor="note">Note (Optional)</Label>
-                  <Textarea id="note" value={note} onChange={(e) => setNote(e.target.value)} placeholder="What's this payment for?" className="resize-none" />
+                  <Textarea
+                    id="note"
+                    value={note}
+                    onChange={(e) => setNote(e.target.value)}
+                    placeholder="What's this payment for?"
+                    className="resize-none"
+                  />
                 </div>
               </div>
               {error && (<Alert variant="destructive"><AlertTitle>Error</AlertTitle><AlertDescription>{error}</AlertDescription></Alert>)}
-              <GreenButton onClick={handleCreateOffer} disabled={loading || amount === '' || Number(amount) <= 0 || Number(amount) > offlineBalance} className="w-full">
+              <GreenButton
+                onClick={handleCreateOffer}
+                disabled={loading || amount === '' || Number(amount) <= 0 || Number(amount) > offlineBalance}
+                className="w-full"
+              >
                 {loading ? (<><RefreshCw className="mr-2 h-4 w-4 animate-spin" />Creating Connection...</>) : (<><QrCode className="mr-2 h-4 w-4" />Generate Payment QR</>)}
               </GreenButton>
             </div>
@@ -498,18 +531,14 @@ const WebRTCSendMoney: React.FC = () => {
               <div className="text-center">
                 <h2 className="text-xl font-semibold mb-2">Show QR Code to Sender</h2>
                 <p className="text-sm text-gray-500">
-                  {offerQrDataChunks.length > 1
-                    ? `Show QR code ${currentQrChunkIndex + 1} of ${offerQrDataChunks.length} to the sender.`
-                    : 'Show this QR code to the sender to establish the connection.'}
+                  {offerQrDataChunks.length > 1 ? `Show QR code ${currentQrChunkIndex + 1} of ${offerQrDataChunks.length} to the sender.` : 'Show this QR code to the sender to establish the connection.'}
                 </p>
               </div>
-
               <div className="flex justify-center">
                 <div className="bg-white p-4 rounded-lg shadow-inner">
                   <QRCode value={offerQrData} size={256} />
                 </div>
               </div>
-
               {offerQrDataChunks.length > 1 && (
                 <div className="flex justify-between space-x-4">
                   <Button
@@ -521,8 +550,7 @@ const WebRTCSendMoney: React.FC = () => {
                     }}
                     disabled={currentQrChunkIndex === 0}
                   >
-                    <ChevronLeft className="h-4 w-4" />
-                    Previous
+                    <ChevronLeft className="h-4 w-4" /> Previous
                   </Button>
                   <Button
                     variant="outline"
@@ -533,79 +561,79 @@ const WebRTCSendMoney: React.FC = () => {
                     }}
                     disabled={currentQrChunkIndex === offerQrDataChunks.length - 1}
                   >
-                    Next
-                    <ChevronRight className="h-4 w-4" />
+                    Next <ChevronRight className="h-4 w-4" />
                   </Button>
                 </div>
               )}
-
-              <p className="text-center text-sm text-gray-500">Amount: ${typeof amount === 'number' ? amount.toFixed(2) : '0.00'}</p>
-              {offerQrDataChunks.length > 1 && (<p className="text-center text-xs text-amber-600 mt-2">This payment requires multiple QR codes. Ask the recipient to scan all {offerQrDataChunks.length} QR codes in order.</p>)}
               {error && (<Alert variant="destructive"><AlertTitle>Error</AlertTitle><AlertDescription>{error}</AlertDescription></Alert>)}
-              <div className="flex flex-col gap-3">
-                <GreenButton onClick={() => { setError(null); setShowScanner(true);}} className="w-full"><ScanLine className="mr-2 h-4 w-4" />Scan Recipient's QR</GreenButton>
-                <Button variant="outline" onClick={handleCancelAndReset} className="w-full"><ArrowLeft className="mr-2 h-4 w-4" />Cancel</Button>
-              </div>
-              {showScanner && (
-                <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
-                  <div className="bg-white p-6 rounded-lg max-w-sm w-full">
-                    <h3 className="text-lg font-semibold mb-4">Scan Answer QR Code</h3>
-                    <p className="text-sm text-gray-500 mb-4">Position the QR code from the receiver within the scanning area.</p>
-                    <QrScanner
-                      onScan={handleQrCodeScanned}
-                      onError={(scanError) => { console.error('Scanner error:', scanError.message); setError(scanError.message); setShowScanner(false); }}
-                      onCancel={() => { console.log('Scanner cancelled by user'); setShowScanner(false); }}
-                    />
-                    <Button variant="outline" onClick={() => setShowScanner(false)} className="w-full mt-4">Close Scanner</Button>
-                  </div>
-                </div>
-              )}
+              <Button onClick={() => setShowScanner(true)} className="w-full">
+                <ScanLine className="mr-2 h-4 w-4" /> Scan Receiver's QR (Answer)
+              </Button>
+              <Button variant="outline" onClick={handleCancelAndReset} className="w-full">
+                Cancel
+              </Button>
             </div>
           )}
 
           {step === SendMoneyStep.sending && (
             <div className="space-y-6 text-center">
-              <RefreshCw className="h-12 w-12 text-greenleaf-600 mx-auto animate-spin" />
-              <h2 className="text-xl font-semibold">Establishing Connection & Sending</h2>
-              <p className="text-sm text-gray-500">Please wait while the secure connection is established and payment details are sent...</p>
-              {error && (<Alert variant="destructive" className="mt-4"><AlertTitle>Connection Error</AlertTitle><AlertDescription>{error}</AlertDescription></Alert>)}
+              <RefreshCw className="h-12 w-12 text-blue-500 animate-spin mx-auto" />
+              <h2 className="text-xl font-semibold">Sending Payment...</h2>
+              <p className="text-sm text-gray-500">Please keep your devices close.</p>
+              {error && (<Alert variant="destructive"><AlertTitle>Error</AlertTitle><AlertDescription>{error}</AlertDescription></Alert>)}
+              <Button variant="outline" onClick={handleCancelAndReset} className="w-full">
+                Cancel
+              </Button>
             </div>
           )}
 
           {step === SendMoneyStep.waitForReceipt && (
             <div className="space-y-6 text-center">
-              <RefreshCw className="h-12 w-12 text-greenleaf-600 mx-auto animate-spin" />
-              <h2 className="text-xl font-semibold">Waiting for Receipt</h2>
-              <p className="text-sm text-gray-500">Payment sent. Waiting for confirmation from the recipient...</p>
-              <p className="text-xs text-gray-400 mt-2">This may take up to 30 seconds.</p>
-              {error && (<Alert variant="destructive" className="mt-4"><AlertTitle>Error</AlertTitle><AlertDescription>{error}</AlertDescription></Alert>)}
-              <Button variant="outline" onClick={handleCancelAndReset} className="w-full mt-6">Cancel</Button>
+              <RefreshCw className="h-12 w-12 text-blue-500 animate-spin mx-auto" />
+              <h2 className="text-xl font-semibold">Waiting for Receipt...</h2>
+              <p className="text-sm text-gray-500">Confirming transaction with the recipient.</p>
+              {error && (<Alert variant="destructive"><AlertTitle>Error</AlertTitle><AlertDescription>{error}</AlertDescription></Alert>)}
+              <Button variant="outline" onClick={handleCancelAndReset} className="w-full">
+                Cancel
+              </Button>
             </div>
           )}
 
           {step === SendMoneyStep.receiptTimeout && (
             <div className="space-y-6 text-center">
-              <AlertTriangle className="h-12 w-12 text-amber-500 mx-auto" />
+              <AlertTriangle className="h-12 w-12 text-yellow-500 mx-auto" />
               <h2 className="text-xl font-semibold">Receipt Timeout</h2>
-              <p className="text-sm text-gray-500">We didn't receive a confirmation receipt from the recipient in time.</p>
-              <p className="text-sm text-gray-500 mt-2">The payment <span className="font-semibold">may or may not</span> have gone through.</p>
-              <p className="text-sm text-gray-500 mt-2">Please <span className="font-semibold">check with the recipient</span> to confirm if they received ${typeof amount === 'number' ? amount.toFixed(2) : 'the amount'}.</p>
+              <p className="text-sm text-gray-500">
+                {error || "The payment may have been sent, but confirmation was not received. Please check with the recipient."}
+              </p>
               {transactionRef.current && (
-                <p className="text-xs text-gray-400 mt-2">Transaction ID: {transactionRef.current.id} (for reference)</p>
+                <Card>
+                  <CardHeader><CardTitle>Payment Details</CardTitle><CardDescription>Transaction ID: {transactionRef.current.id}</CardDescription></CardHeader>
+                  <CardContent className="space-y-4">
+                    <div className="flex justify-between"><span className="text-gray-500">Amount</span><span className="font-semibold">${transactionRef.current.amount.toFixed(2)}</span></div>
+                    <div className="flex justify-between"><span className="text-gray-500">Recipient</span><span>{transactionRef.current.recipient}</span></div>
+                    <div className="flex justify-between"><span className="text-gray-500">Date</span><span>{new Date(transactionRef.current.timestamp).toLocaleString()}</span></div>
+                    {transactionRef.current.note && (<div><span className="text-gray-500 block mb-1">Note</span><p className="bg-gray-50 p-2 rounded text-sm">{transactionRef.current.note}</p></div>)}
+                    <div className="pt-2"><span className="text-gray-500 block mb-1">Status</span><p className="bg-yellow-50 p-2 rounded text-sm font-semibold">Pending/Unknown</p></div>
+                  </CardContent>
+                  <CardFooter>
+                    <Button onClick={handleCancelAndReset} className="w-full">
+                      Done
+                    </Button>
+                  </CardFooter>
+                </Card>
               )}
-              {error && (<Alert variant="destructive" className="mt-4"><AlertTitle>Details</AlertTitle><AlertDescription>{error}</AlertDescription></Alert>)}
-              <GreenButton onClick={() => navigate('/offline')} className="w-full mt-6">Okay</GreenButton>
-              <Button variant="outline" onClick={handleCancelAndReset} className="w-full mt-2">Try Another Payment</Button>
+              <Button onClick={handleCancelAndReset} className="w-full">
+                New Transaction
+              </Button>
             </div>
           )}
 
           {step === SendMoneyStep.complete && transactionRef.current && (
-            <div className="space-y-6">
-              <div className="text-center mb-6">
-                <div className="inline-flex items-center justify-center w-16 h-16 rounded-full bg-green-100 mb-4"><CheckCircle className="h-8 w-8 text-green-600" /></div>
-                <h2 className="text-xl font-semibold">Payment Sent!</h2>
-                <p className="text-gray-500 mt-1">Your payment has been sent successfully.</p>
-              </div>
+            <div className="space-y-6 text-center">
+              <CheckCircle className="h-12 w-12 text-green-500 mx-auto" />
+              <h2 className="text-xl font-semibold">Payment Sent!</h2>
+              <p className="text-sm text-gray-500">Your payment has been successfully sent offline.</p>
               <Card>
                 <CardHeader><CardTitle>Payment Receipt</CardTitle><CardDescription>Transaction ID: {transactionRef.current.id}</CardDescription></CardHeader>
                 <CardContent className="space-y-4">
@@ -619,6 +647,30 @@ const WebRTCSendMoney: React.FC = () => {
               </Card>
             </div>
           )}
+
+          {showScanner && (
+            <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+              <div className="bg-white p-6 rounded-lg max-w-sm w-full">
+                <h3 className="text-lg font-semibold mb-4">Scan Receiver's QR Code</h3>
+                <p className="text-sm text-gray-500 mb-4">Position the QR code from the receiver within the scanning area.</p>
+                <QrScanner
+                  onScan={handleQrCodeScanned}
+                  onError={(scanError) => {
+                    console.error('Scanner error:', scanError.message);
+                    setError(scanError.message);
+                    setShowScanner(false);
+                  }}
+                  onCancel={() => {
+                    console.log('Scanner cancelled by user');
+                    setShowScanner(false);
+                  }}
+                />
+                <Button variant="outline" onClick={() => setShowScanner(false)} className="w-full mt-4">
+                  Cancel Scan
+                </Button>
+              </div>
+            </div>
+          )}
         </WhiteCard>
       </div>
     </Layout>
@@ -626,3 +678,579 @@ const WebRTCSendMoney: React.FC = () => {
 };
 
 export default WebRTCSendMoney;
+
+// WebRTCReceiveMoney.tsx
+import React, { useState, useEffect, useCallback } from 'react';
+import Layout from "@/components/Layout";
+import WhiteCard from "@/components/WhiteCard";
+import { useAuth } from '@/contexts/AuthContext';
+import { useOfflineBalance } from '@/contexts/OfflineBalanceContext';
+import { useNavigate } from 'react-router-dom';
+import QRCode from 'react-qr-code';
+import QrScanner from '@/components/QRScanner';
+import { Button } from "@/components/ui/button";
+import GreenButton from "@/components/GreenButton";
+import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
+import { useToast } from "@/components/ui/use-toast";
+import { Separator } from "@/components/ui/separator";
+import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
+import { ArrowLeft, RefreshCw, CheckCircle, QrCode, ScanLine, Smartphone, ChevronLeft, ChevronRight } from "lucide-react";
+import createWebRTCService, { WebRTCConnectionData } from '@/services/WebRTCService';
+import { encodeConnectionData, decodeConnectionData, joinConnectionData, splitConnectionData } from '@/utils/qrCodeUtils';
+import { storageService } from '@/services/storageService';
+
+type ReceiveMoneyStep = 'scan' | 'createAnswer' | 'waitForPayment' | 'complete';
+
+interface Transaction {
+  id: string;
+  type: 'receive';
+  amount: number;
+  sender: string;
+  recipient: string;
+  timestamp: number;
+  note?: string;
+  status: 'pending' | 'completed' | 'failed';
+  receiptId: string;
+  synced?: boolean;
+}
+
+const WebRTCReceiveMoney = () => {
+  const { user } = useAuth();
+  const { offlineBalance, refreshOfflineBalance, addToOfflineBalance } = useOfflineBalance();
+  const navigate = useNavigate();
+  const { toast } = useToast();
+
+  const [step, setStep] = useState<ReceiveMoneyStep>('scan');
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [answerQrData, setAnswerQrData] = useState<string | null>(null);
+  const [answerQrDataChunks, setAnswerQrDataChunks] = useState<string[]>([]);
+  const [currentAnswerChunkIndex, setCurrentAnswerChunkIndex] = useState(0);
+  const [webrtcService, setWebrtcService] = useState<ReturnType<typeof createWebRTCService> | null>(null);
+  const [transaction, setTransaction] = useState<Transaction | null>(null);
+  const [showScanner, setShowScanner] = useState(false);
+  const [scannedChunks, setScannedChunks] = useState<string[]>([]);
+  const [totalChunksExpected, setTotalChunksExpected] = useState<number | null>(null);
+  const [isMultiChunkMode, setIsMultiChunkMode] = useState(false);
+
+  useEffect(() => {
+    if (user?.email) {
+      const service = createWebRTCService(user.email);
+      setWebrtcService(service);
+
+      return () => {
+        service.closeConnection();
+      };
+    }
+  }, [user]);
+
+  useEffect(() => {
+    if (!user) {
+      navigate('/login');
+    }
+  }, [user, navigate]);
+
+  const handleQrCodeScanned = async (data: string) => {
+    console.log('QR code scanned, processing data...');
+    setShowScanner(false);
+    if (!webrtcService || !user?.email) {
+      console.error('WebRTC service not initialized or user not logged in');
+      setError('WebRTC service not initialized or user not logged in');
+      return;
+    }
+    setLoading(true);
+    setError(null);
+    try {
+      if (!data || data.trim() === '') {
+        throw new Error('Invalid QR code: empty data');
+      }
+
+      if (data.startsWith('CHUNK:')) {
+        const parts = data.split(':', 4);
+        if (parts.length !== 4) {
+          throw new Error('Invalid chunk format');
+        }
+
+        const currentChunk = parseInt(parts[1], 10);
+        const totalChunks = parseInt(parts[2], 10);
+        const chunkData = parts[3];
+
+        console.log(`Received chunk ${currentChunk} of ${totalChunks}`);
+        if (!isMultiChunkMode) {
+          setIsMultiChunkMode(true);
+          setTotalChunksExpected(totalChunks);
+          setScannedChunks(new Array(totalChunks).fill(null));
+          toast({
+            title: "Multiple QR Codes Required",
+            description: `This is chunk 1 of ${totalChunks}. Please scan all chunks in order.`,
+            duration: 5000,
+          });
+        }
+
+        if (!/^[A-Za-z0-9+/=]+$/.test(chunkData)) {
+          console.error('Invalid base64 data in chunk');
+          throw new Error(`Invalid QR code format: chunk ${currentChunk} is not properly encoded`);
+        }
+
+        const updatedChunks = [...scannedChunks];
+        updatedChunks[currentChunk - 1] = chunkData;
+        setScannedChunks(updatedChunks);
+        console.log(`Stored chunk ${currentChunk} of ${totalChunks}, data length: ${chunkData.length}`);
+        console.log(`First 20 chars of chunk: ${chunkData.substring(0, 20)}...`);
+        if (updatedChunks.filter(Boolean).length === totalChunks) {
+          console.log('All chunks received, processing...');
+          const combinedData = updatedChunks.join('');
+          console.log(`Combined data length: ${combinedData.length}`);
+
+          try {
+            const offerData = decodeConnectionData(combinedData);
+            console.log('Combined offer data decoded successfully:', offerData.type);
+
+            if (offerData.type !== 'offer') {
+              console.error('Invalid QR code type:', offerData.type);
+              throw new Error('Invalid QR code: not an offer');
+            }
+
+            processOfferData(offerData);
+          } catch (error) {
+            console.error('Error processing combined chunks:', error);
+            setError(`Error processing QR code chunks: ${error instanceof Error ? error.message : 'Unknown error'}`);
+            setLoading(false);
+            setShowScanner(true);
+            setIsMultiChunkMode(false);
+            setScannedChunks([]);
+          }
+        } else {
+          const missingChunks = totalChunks - updatedChunks.filter(Boolean).length;
+          toast({
+            title: `Chunk ${currentChunk} Scanned`,
+            description: `${missingChunks} more chunks to scan.`,
+            duration: 3000,
+          });
+          setLoading(false);
+          setShowScanner(true);
+        }
+        return;
+      }
+
+      try {
+        if (!/^[A-Za-z0-9+/=]+$/.test(data)) {
+          console.error('Invalid base64 data in single QR code');
+          throw new Error('Invalid QR code format: not properly encoded');
+        }
+
+        console.log('Decoding QR code data...');
+        const offerData = decodeConnectionData(data);
+        console.log('Offer data decoded successfully:', offerData.type);
+
+        if (offerData.type !== 'offer') {
+          console.error('Invalid QR code type:', offerData.type);
+          throw new Error('Invalid QR code: not an offer');
+        }
+
+        processOfferData(offerData);
+      } catch (error) {
+        console.error('Error decoding QR code:', error);
+        setError(`Error decoding QR code: ${error instanceof Error ? error.message : 'Unknown error'}`);
+        setLoading(false);
+        setShowScanner(true);
+      }
+    } catch (err) {
+      console.error('Error processing QR code:', err);
+      setError(`Failed to process QR code: ${err instanceof Error ? err.message : 'Unknown error'}`);
+      setStep('scan');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const processOfferData = async (offerData: WebRTCConnectionData) => {
+    console.log('Processing offer data...');
+    if (!webrtcService) {
+      throw new Error('WebRTC service not initialized');
+    }
+
+    try {
+      const answer = await webrtcService.initiateReceiverConnection(offerData);
+      console.log('Created answer:', answer);
+      const answerData: WebRTCConnectionData = {
+        type: 'answer' as const,
+        sdp: answer.sdp,
+        senderID: user?.email || '',
+      };
+
+      const chunks = splitConnectionData(answerData);
+      console.log(`Split answer into ${chunks.length} chunks`);
+
+      webrtcService.onMessage(async (message) => {
+        console.log('Received message:', message);
+        if (message.type === 'payment') {
+          console.log('Payment message received, processing...');
+          await handlePaymentReceived(message);
+        }
+      });
+
+      webrtcService.onConnectionStateChange((state) => {
+        console.log('Connection state changed:', state);
+        if (state === 'connected') {
+          console.log('WebRTC connection established');
+          toast({
+            title: "Connection Established",
+            description: "Connected to sender device",
+            duration: 3000,
+          });
+          setStep('waitForPayment');
+        } else if (state === 'failed' || state === 'disconnected' || state === 'closed') {
+          console.log('WebRTC connection lost:', state);
+          // Only set error and reset if the current step is not 'complete'
+          // AND the transaction status is not 'completed'.
+          if (step !== 'complete' && transaction?.status !== 'completed') {
+            // Avoid saving failed states multiple times
+            if (transaction && transaction.status !== 'failed') {
+              console.log(`Logging transaction ID before saving (connection lost): ${transaction.id}`);
+              storageService.saveTransaction({ ...transaction, status: 'failed' as const });
+            }
+            setError('Connection lost. Please try again.');
+            resetProcess();
+          }
+        }
+      });
+
+      setAnswerQrDataChunks(chunks);
+      setCurrentAnswerChunkIndex(0);
+      setStep('createAnswer');
+    } catch (error) {
+      console.error('Error creating answer:', error);
+      setError(`Failed to create answer: ${error instanceof Error ? error.message : 'Unknown error'}`);
+      setStep('scan'); // Go back to scan step on error
+    }
+  };
+
+  const handlePaymentReceived = async (paymentData: any) => {
+    console.log('Processing payment data:', paymentData);
+    let receiptId = '';
+    let pendingTransaction: Transaction | null = null;
+    try {
+      if (!paymentData.amount || !paymentData.senderID || !paymentData.transactionId) {
+        console.error('Invalid payment data:', paymentData);
+        throw new Error('Invalid payment data');
+      }
+
+      receiptId = `receipt-${Date.now()}-${Math.random().toString(36).substring(2, 10)}`;
+      console.log('Generated receipt ID:', receiptId);
+      const amount = Number(paymentData.amount);
+      console.log('Payment amount:', amount);
+
+      const newPendingTransaction: Transaction = {
+        id: receiptId,
+        type: 'receive',
+        amount: amount,
+        sender: paymentData.senderID || paymentData.sender || 'unknown',
+        recipient: user?.email || 'unknown',
+        timestamp: paymentData.timestamp || Date.now(),
+        note: paymentData.note,
+        receiptId,
+        status: 'pending' as const,
+        synced: false
+      };
+      pendingTransaction = newPendingTransaction;
+      setTransaction(pendingTransaction);
+      console.log(`Logging transaction ID before saving (pending): ${pendingTransaction.id}`);
+      await storageService.saveTransaction(pendingTransaction); // Save pending transaction
+
+      console.log('Adding to offline balance:', amount);
+      await addToOfflineBalance(amount);
+      console.log('Balance update completed');
+
+      console.log('Sending receipt to sender...');
+      await webrtcService?.sendMessage({
+        type: 'receipt',
+        receiptId: receiptId,
+        transactionId: paymentData.transactionId,
+        status: 'success'
+      });
+      console.log('Sent receipt:', {
+        receiptId: pendingTransaction.receiptId,
+        transactionId: paymentData.transactionId,
+        status: 'success'
+      });
+
+      // Avoid saving failed states multiple times if it was already failed
+      if (pendingTransaction.status !== 'failed') {
+        const completedTransaction: Transaction = {
+          ...pendingTransaction,
+          status: 'completed' as const
+        };
+        setTransaction(completedTransaction);
+        console.log(`Logging transaction ID before saving (completed): ${completedTransaction.id}`);
+        await storageService.saveTransaction(completedTransaction); // Save completed transaction
+      }
+
+      setStep('complete');
+      toast({
+        title: "Payment Received",
+        description: `$${amount.toFixed(2)} received successfully. Offline balance updated.`,
+        duration: 5000,
+      });
+    } catch (error) {
+      console.error('Error processing payment:', error);
+      const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+      setError(`Payment failed: ${errorMessage}`);
+
+      // Avoid saving failed states multiple times
+      if (pendingTransaction && pendingTransaction.status !== 'failed') {
+        const failedTransaction: Transaction = {
+          ...pendingTransaction,
+          status: 'failed' as const
+        };
+        setTransaction(failedTransaction);
+        console.log(`Logging transaction ID before saving (payment error - pending): ${failedTransaction.id}`);
+        await storageService.saveTransaction(failedTransaction); // Save failed transaction
+      } else if (transaction && transaction.status !== 'failed') {
+        const failedTransaction: Transaction = {
+          ...transaction,
+          status: 'failed' as const
+        };
+        setTransaction(failedTransaction);
+        console.log(`Logging transaction ID before saving (payment error - existing): ${failedTransaction.id}`);
+        await storageService.saveTransaction(failedTransaction); // Save failed transaction
+      }
+
+
+      try {
+        await webrtcService?.sendMessage({
+          type: 'receipt',
+          receiptId: receiptId,
+          status: 'failed',
+          error: errorMessage,
+          transactionId: paymentData.transactionId
+        });
+        console.log('Sent error receipt:', {
+          receiptId,
+          transactionId: paymentData.transactionId,
+          status: 'failed',
+          error: errorMessage
+        });
+      } catch (sendError) {
+        console.error('Error sending error receipt:', sendError);
+      }
+
+      toast({
+        title: "Payment Error",
+        description: errorMessage,
+        variant: "destructive",
+        duration: 7000,
+      });
+      setStep('waitForPayment'); // Stay on waitForPayment or go back to scan? Staying for now.
+    }
+  };
+
+  const resetProcess = () => {
+    console.log('Resetting WebRTC process...');
+    setStep('scan');
+    setError(null);
+    setAnswerQrData(null);
+    setAnswerQrDataChunks([]);
+    setCurrentAnswerChunkIndex(0);
+    setTransaction(null); // Clear transaction on reset
+    setShowScanner(false);
+    setScannedChunks([]);
+    setTotalChunksExpected(null);
+    setIsMultiChunkMode(false);
+    if (webrtcService) {
+      console.log('Closing existing WebRTC connection');
+      webrtcService.closeConnection();
+    }
+
+    // Re-initialize WebRTC service
+    if (user?.email) {
+      console.log('Initializing new WebRTC service');
+      const service = createWebRTCService(user.email);
+      setWebrtcService(service);
+    } else {
+      console.error('Cannot reset WebRTC service: user not logged in');
+    }
+  };
+
+  const readyToScan = !!user?.email && !!webrtcService;
+
+  return (
+    <Layout>
+      <div className="space-y-6">
+        <div className="flex items-center">
+          <Button
+            variant="ghost"
+            onClick={() => navigate('/offline')}
+            className="mr-4"
+          >
+            <ArrowLeft className="h-4 w-4 mr-2" /> Back
+          </Button>
+          <h1 className="text-2xl font-bold text-dark">Receive Money (WebRTC)</h1>
+        </div>
+
+        <WhiteCard className="p-6 max-w-md mx-auto">
+          {step === 'scan' && (
+            <div className="space-y-6">
+              <h2 className="text-xl font-semibold">Scan QR Code</h2>
+              <p className="text-sm text-gray-500">
+                Scan the QR code displayed on the sender's device to establish a connection.
+              </p>
+              <p className="text-xs text-gray-400">
+                Make sure the QR code is well-lit and positioned within the scanning area.
+              </p>
+              {readyToScan ? (
+                <div className="flex flex-col gap-3">
+                  <GreenButton onClick={() => setShowScanner(true)} className="w-full" >
+                    <ScanLine className="mr-2 h-4 w-4" /> Scan QR Code
+                  </GreenButton>
+                  <Button variant="outline" onClick={() => navigate('/offline')} className="w-full" >
+                    <ArrowLeft className="mr-2 h-4 w-4" /> Cancel
+                  </Button>
+                </div>
+              ) : (
+                <div className="loading">
+                  <p>Initializing...</p>
+                </div>
+              )}
+              {error && (
+                <Alert variant="destructive">
+                  <AlertTitle>Error</AlertTitle>
+                  <AlertDescription>{error}</AlertDescription>
+                </Alert>
+              )}
+            </div>
+          )}
+
+          {showScanner && (
+            <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+              <div className="bg-white p-6 rounded-lg max-w-sm w-full">
+                <h3 className="text-lg font-semibold mb-4">Scan Sender's QR Code</h3>
+                <p className="text-sm text-gray-500 mb-4">Position the QR code from the sender within the scanning area.</p>
+                <QrScanner
+                  onScan={handleQrCodeScanned}
+                  onError={(scanError) => {
+                    console.error('Scanner error:', scanError.message);
+                    setError(scanError.message);
+                    setShowScanner(false);
+                  }}
+                  onCancel={() => {
+                    console.log('Scanner cancelled by user');
+                    setShowScanner(false);
+                  }}
+                />
+                <Button variant="outline" onClick={() => setShowScanner(false)} className="w-full mt-4">
+                  Cancel Scan
+                </Button>
+              </div>
+            </div>
+          )}
+
+          {step === 'createAnswer' && answerQrDataChunks.length > 0 && (
+            <div className="space-y-6">
+              <div className="text-center">
+                <h2 className="text-xl font-semibold mb-2">Show QR Code to Sender</h2>
+                <p className="text-sm text-gray-500">
+                  {answerQrDataChunks.length > 1 ? `Show QR code ${currentAnswerChunkIndex + 1} of ${answerQrDataChunks.length} to the sender.` : 'Show this QR code to the sender to complete the connection.'}
+                </p>
+              </div>
+              <div className="flex justify-center">
+                <div className="bg-white p-4 rounded-lg shadow-inner">
+                  <QRCode value={answerQrDataChunks[currentAnswerChunkIndex]} size={256} />
+                </div>
+              </div>
+              {answerQrDataChunks.length > 1 && (
+                <div className="flex justify-between space-x-4">
+                  <Button
+                    variant="outline"
+                    onClick={() => {
+                      const newIndex = Math.max(0, currentAnswerChunkIndex - 1);
+                      setCurrentAnswerChunkIndex(newIndex);
+                    }}
+                    disabled={currentAnswerChunkIndex === 0}
+                  >
+                    <ChevronLeft className="h-4 w-4" /> Previous
+                  </Button>
+                  <Button
+                    variant="outline"
+                    onClick={() => {
+                      const newIndex = Math.min(answerQrDataChunks.length - 1, currentAnswerChunkIndex + 1);
+                      setCurrentAnswerChunkIndex(newIndex);
+                    }}
+                    disabled={currentAnswerChunkIndex === answerQrDataChunks.length - 1}
+                  >
+                    Next <ChevronRight className="h-4 w-4" />
+                  </Button>
+                </div>
+              )}
+              {error && (<Alert variant="destructive"><AlertTitle>Error</AlertTitle><AlertDescription>{error}</AlertDescription></Alert>)}
+              <Button onClick={resetProcess} className="w-full">
+                Cancel
+              </Button>
+            </div>
+          )}
+
+          {step === 'waitForPayment' && (
+            <div className="space-y-6 text-center">
+              <RefreshCw className="h-12 w-12 text-blue-500 animate-spin mx-auto" />
+              <h2 className="text-xl font-semibold">Waiting for Payment...</h2>
+              <p className="text-sm text-gray-500">Connection established. Waiting for sender to initiate payment.</p>
+              {error && (<Alert variant="destructive"><AlertTitle>Error</AlertTitle><AlertDescription>{error}</AlertDescription></Alert>)}
+              <Button variant="outline" onClick={resetProcess} className="w-full">
+                Cancel
+              </Button>
+            </div>
+          )}
+
+          {step === 'complete' && transaction && (
+            <div className="space-y-6 text-center">
+              <CheckCircle className="h-12 w-12 text-green-500 mx-auto" />
+              <h2 className="text-xl font-semibold">Payment Received!</h2>
+              <p className="text-sm text-gray-500">You have successfully received an offline payment.</p>
+              <Card>
+                <CardHeader><CardTitle>Payment Details</CardTitle><CardDescription>Transaction ID: {transaction.id}</CardDescription></CardHeader>
+                <CardContent className="space-y-4">
+                  <div className="flex justify-between">
+                    <span className="text-gray-500">Amount</span>
+                    <span className="font-semibold">${transaction.amount.toFixed(2)}</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-gray-500">Sender</span>
+                    <span>{transaction.sender}</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-gray-500">Date</span>
+                    <span>{new Date(transaction.timestamp).toLocaleString()}</span>
+                  </div>
+                  {transaction.note && (
+                    <div>
+                      <span className="text-gray-500 block mb-1">Note</span>
+                      <p className="bg-gray-50 p-2 rounded text-sm">{transaction.note}</p>
+                    </div>
+                  )}
+                  <div className="pt-2">
+                    <span className="text-gray-500 block mb-1">Receipt ID</span>
+                    <p className="bg-gray-50 p-2 rounded text-xs font-mono break-all">
+                      {transaction.receiptId}
+                    </p>
+                  </div>
+                </CardContent>
+                <CardFooter>
+                  <GreenButton
+                    onClick={() => navigate('/offline')}
+                    className="w-full"
+                  >
+                    Done
+                  </GreenButton>
+                </CardFooter>
+              </Card>
+            </div>
+          )}
+        </WhiteCard>
+      </div>
+    </Layout>
+  );
+};
+
+export default WebRTCReceiveMoney;
+
+
