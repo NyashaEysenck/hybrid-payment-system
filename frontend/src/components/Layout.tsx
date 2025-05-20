@@ -66,7 +66,7 @@ const Layout = ({ children }: LayoutProps) => {
       >
         <div className="flex h-16 items-center justify-between border-b px-6">
           {!sidebarCollapsed && (
-            <h1 className="text-xl font-bold text-greenleaf-600">GreenLeaf</h1>
+            <h1 className="text-xl font-bold text-greenleaf-600">NexaPay</h1>
           )}
           <button
             onClick={toggleSidebarCollapsed}
