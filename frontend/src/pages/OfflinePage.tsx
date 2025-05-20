@@ -1,26 +1,16 @@
-import React, { useState, useEffect, useCallback } from "react";
+import React, { useState, useEffect, useCallback, useRef } from "react";
 import Layout from "@/components/Layout";
 import WhiteCard from "@/components/WhiteCard";
 import BalanceDisplay from "@/components/BalanceDisplay";
-import GreenButton from "@/components/GreenButton";
 import { useWallet } from "@/contexts/WalletContext";
 import { useOfflineBalance } from "@/contexts/OfflineBalanceContext";
-import { transferToOffline, transferToOnline } from "@/contexts/WalletService";
 import {
-  CreditCard,
-  Lock,
-  Unlock,
-  QrCode,
-  ScanLine,
-  Smartphone,
   Send,
   Wallet,
-  ArrowLeftRight,
+  QrCode,
   WifiOff,
   History,
 } from "lucide-react";
-import { Label } from "@/components/ui/label";
-import { Slider } from "@/components/ui/slider";
 import { useNavigate } from "react-router-dom";
 import { storageService } from '@/services/storageService';
 import { Transaction } from '@/types';
@@ -50,8 +40,10 @@ const OfflinePage = () => {
   const { offlineBalance, pendingTransactions, refreshOfflineBalance, isOffline } = useOfflineBalance();
   const [isProcessing, setIsProcessing] = useState(false);
   const [offlineTransactions, setOfflineTransactions] = useState<Transaction[]>([]);
-  const [previousOfflineStatus, setPreviousOfflineStatus] = useState<boolean | null>(null);
   const navigate = useNavigate();
+  const prevIsOfflineRef = useRef(isOffline);
+
+  // Track online balance display without affecting the rendering
   const onlineBalance = isOffline ? "N/A" : Number(balance);
 
   const resetDatabases = useCallback(async () => {
@@ -76,55 +68,40 @@ const OfflinePage = () => {
     }
   }, []);
 
-  const loadData = useCallback(async () => {
-    setIsProcessing(true);
-    try {
-      console.log('Loading data on OfflinePage...');
-      await fetchWalletData();
-      await refreshOfflineBalance();
-      const transactions = await storageService.getTransactions();
-      const processed = processTransactions(transactions);
-      setOfflineTransactions(processed);
-      console.log('Data loaded successfully');
-    } catch (error) {
-      console.error('Error loading data:', error);
-    } finally {
-      setIsProcessing(false);
-    }
+  // Initial data loading
+  useEffect(() => {
+    const loadData = async () => {
+      setIsProcessing(true);
+      try {
+        console.log('Loading data on OfflinePage...');
+        await fetchWalletData();
+        await refreshOfflineBalance();
+        const transactions = await storageService.getTransactions();
+        const processed = processTransactions(transactions);
+        setOfflineTransactions(processed);
+        console.log('Data loaded successfully');
+      } catch (error) {
+        console.error('Error loading data:', error);
+      } finally {
+        setIsProcessing(false);
+      }
+    };
+    loadData();
   }, [fetchWalletData, refreshOfflineBalance]);
 
-  // Monitor offline/online status changes
+  // Monitor isOffline changes and refresh wallet data when going from offline to online
   useEffect(() => {
-    // Initial load
-    loadData();
-
-    // Track changes in offline status
-    if (previousOfflineStatus !== null && previousOfflineStatus !== isOffline) {
-      console.log(`Offline status changed: ${previousOfflineStatus} -> ${isOffline}`);
-      
-      // If going from offline to online, refresh data
-      if (previousOfflineStatus === true && isOffline === false) {
-        console.log('Transitioning from offline to online, refreshing wallet data...');
-        loadData();
-      }
+    // Check if we're transitioning from offline to online
+    if (prevIsOfflineRef.current === true && isOffline === false) {
+      console.log('Detected transition from offline to online, refreshing wallet data...');
+      fetchWalletData().catch(error => {
+        console.error('Error refreshing wallet data after going online:', error);
+      });
     }
     
-    setPreviousOfflineStatus(isOffline);
-  }, [isOffline, previousOfflineStatus, loadData]);
-
-  // Monitor network status changes
-  useEffect(() => {
-    const handleOnline = () => {
-      console.log('Network connection detected - refreshing data');
-      loadData();
-    };
-
-    window.addEventListener('online', handleOnline);
-    
-    return () => {
-      window.removeEventListener('online', handleOnline);
-    };
-  }, [loadData]);
+    // Update the ref to track the current value for the next render
+    prevIsOfflineRef.current = isOffline;
+  }, [isOffline, fetchWalletData]);
 
   const handleSendMoneyClick = () => {
     if (!isOffline) {
@@ -165,14 +142,6 @@ const OfflinePage = () => {
                   You have {pendingTransactions} pending offline {pendingTransactions === 1 ?
                     'transaction' : 'transactions'} to be synced
                 </div>
-              )}
-              {!isProcessing && (
-                <button 
-                  onClick={loadData} 
-                  className="text-sm text-greenleaf-600 hover:text-greenleaf-800 flex items-center mt-2"
-                >
-                  <ArrowLeftRight size={14} className="mr-1" /> Refresh balances
-                </button>
               )}
             </div>
           </WhiteCard>
