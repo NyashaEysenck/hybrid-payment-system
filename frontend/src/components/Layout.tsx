@@ -1,12 +1,12 @@
 import { ReactNode, useState, useEffect, useCallback } from "react";
 import { useLocation, Link } from "react-router-dom";
-import { Menu, X, Home, Send, Download, CreditCard, Settings, LogOut, WifiOff, Wifi, ChevronLeft, ChevronRight, ToggleLeft } from "lucide-react";
+import { Menu, X, Home, Send, Download, CreditCard, Settings, LogOut, WifiOff, Wifi, ChevronLeft, ChevronRight } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
-// No longer needed as we're using localStorage directly
 import { useOfflineBalance } from "@/contexts/OfflineBalanceContext";
 import { useWallet } from "@/contexts/WalletContext";
-import { toast } from "@/components/ui/use-toast";
+import { useToast } from "@/components/ui/use-toast";
+import { useAuth } from "@/contexts/AuthContext"; // Import useAuth
 
 type LayoutProps = {
   children: ReactNode;
@@ -22,6 +22,7 @@ const Layout = ({ children }: LayoutProps) => {
   const location = useLocation();
   const { isOffline, toggleOfflineMode } = useOfflineBalance();
   const { reservedBalance } = useWallet();
+  const { logout } = useAuth(); // Destructure logout from useAuth
 
   // Toggle online/offline mode using OfflineBalanceContext
   const toggleOnlineMode = useCallback(() => {
@@ -67,7 +68,7 @@ const Layout = ({ children }: LayoutProps) => {
           {!sidebarCollapsed && (
             <h1 className="text-xl font-bold text-greenleaf-600">GreenLeaf</h1>
           )}
-          <button 
+          <button
             onClick={toggleSidebarCollapsed}
             className="ml-auto rounded-full p-1 text-gray-500 hover:bg-gray-100 hover:text-gray-700 lg:flex"
           >
@@ -111,8 +112,8 @@ const Layout = ({ children }: LayoutProps) => {
             {!sidebarCollapsed && (
               <div className="flex flex-col items-start">
                 <span className="font-medium">{isOffline ? "Go Online" : "Go Offline"}</span>
-                <span className="text-xs text-gray-500">{isOffline ? 
-                  "Your offline balance will be synced with your online balance when you go online." : 
+                <span className="text-xs text-gray-500">{isOffline ?
+                  "Your offline balance will be synced with your online balance when you go online." :
                   "Your online balance will be copied to your offline balance when you go offline."
                 }</span>
               </div>
@@ -121,7 +122,9 @@ const Layout = ({ children }: LayoutProps) => {
           <button className={cn(
             "flex w-full items-center rounded-md px-4 py-3 text-red-600 hover:bg-gray-100",
             sidebarCollapsed && "justify-center"
-          )}>
+          )}
+            onClick={logout} // Add onClick handler for logout
+          >
             <LogOut size={20} className={sidebarCollapsed ? "mx-auto" : "mr-3"} />
             {!sidebarCollapsed && "Logout"}
           </button>
@@ -141,7 +144,7 @@ const Layout = ({ children }: LayoutProps) => {
                 >
                   {sidebarOpen ? <X size={24} /> : <Menu size={24} />}
                 </button>
-                
+
                 <Button
                   variant="ghost"
                   className="hidden lg:flex ml-4 p-2"
@@ -152,12 +155,12 @@ const Layout = ({ children }: LayoutProps) => {
               </div>
 
               <div className="flex items-center">
-                <button 
+                <button
                   onClick={toggleOnlineMode}
                   className={cn(
                     "flex items-center px-3 py-1 rounded-full text-xs font-medium transition-colors",
-                    isOffline 
-                      ? "bg-gray-200 text-gray-700 hover:bg-gray-300" 
+                    isOffline
+                      ? "bg-gray-200 text-gray-700 hover:bg-gray-300"
                       : "bg-greenleaf-100 text-greenleaf-700 hover:bg-greenleaf-200"
                   )}
                 >
