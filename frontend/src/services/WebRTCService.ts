@@ -197,19 +197,32 @@ export class WebRTCService {
   /**
    * Close the WebRTC connection
    */
-  closeConnection(): void {
-    if (this.dataChannel) {
-      this.dataChannel.close();
-    }
-    
-    if (this.peerConnection) {
-      this.peerConnection.close();
-    }
-    
-    this.dataChannel = null;
-    this.peerConnection = null;
-  }
+  // WebRTCService.ts
 
+closeConnection(): void {
+  // Clear all callbacks first
+  this.onMessageCallback = null;
+  this.onConnectionStateChangeCallback = null;
+  
+  if (this.dataChannel) {
+    // Remove all event listeners
+    this.dataChannel.onopen = null;
+    this.dataChannel.onclose = null;
+    this.dataChannel.onerror = null;
+    this.dataChannel.onmessage = null;
+    this.dataChannel.close();
+  }
+  
+  if (this.peerConnection) {
+    // Remove all event listeners
+    this.peerConnection.onconnectionstatechange = null;
+    this.peerConnection.ondatachannel = null;
+    this.peerConnection.close();
+  }
+  
+  this.dataChannel = null;
+  this.peerConnection = null;
+}
   /**
    * Wait for ICE gathering to complete and return the SDP
    */
