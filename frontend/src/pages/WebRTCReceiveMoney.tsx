@@ -282,8 +282,8 @@ const handlePaymentReceived = async (paymentData: any) => {
     setTransaction(currentTransaction);
     
     // ONLY save the transaction once with pending status
-    console.log(`Saving transaction with pending status: ${currentTransaction.id}`);
-    await storageService.saveTransaction(currentTransaction);
+    //console.log(`Saving transaction with pending status: ${currentTransaction.id}`);
+    //await storageService.saveTransaction(currentTransaction);
 
     // Process the payment (add to balance)
     console.log('Adding to offline balance:', amount);
