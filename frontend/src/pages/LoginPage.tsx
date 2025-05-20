@@ -2,7 +2,7 @@
 import { useState, useCallback } from "react";
 import { useNavigate, Link } from "react-router-dom";
 import { useAuth } from "@/contexts/AuthContext";
-import { Loader2, QrCode, Cloud, Shield, Lock } from "lucide-react";
+import { Loader2, QrCode, Cloud, Shield, Lock, Users } from "lucide-react"; // Added Users icon
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import GreenButton from "@/components/GreenButton";
@@ -12,23 +12,23 @@ const LoginPage = () => {
   const [password, setPassword] = useState("");
   const [isLoading, setIsLoading] = useState(false);
   const [formErrors, setFormErrors] = useState({ email: "", password: "" });
-  const { login, user } = useAuth();
+  const { login, user } = useAuth(); //
   const navigate = useNavigate();
 
-  const validateForm = useCallback(() => {
+  const validateForm = useCallback(() => { //
     let valid = true;
     const errors = { email: "", password: "" };
     
     if (!email) {
-      errors.email = "Email is required";
+      errors.email = "Email is required"; //
       valid = false;
     } else if (!/\S+@\S+\.\S+/.test(email)) {
-      errors.email = "Email is invalid";
+      errors.email = "Email is invalid"; //
       valid = false;
     }
     
     if (!password) {
-      errors.password = "Password is required";
+      errors.password = "Password is required"; //
       valid = false;
     }
     
@@ -36,19 +36,19 @@ const LoginPage = () => {
     return valid;
   }, [email, password]);
 
-  const handleSubmit = useCallback(async (e: React.FormEvent) => {
+  const handleSubmit = useCallback(async (e: React.FormEvent) => { //
     e.preventDefault();
     if (isLoading) return;
     if (!validateForm()) return;
     
-    setIsLoading(true);
+    setIsLoading(true); //
     try {
-      await login(email, password);
-      navigate("/dashboard");
+      await login(email, password); //
+      navigate("/dashboard"); //
     } catch (error) {
-      // Error handled in AuthContext
+      // Error handled in AuthContext //
     } finally {
-      setIsLoading(false);
+      setIsLoading(false); //
     }
   }, [email, password, isLoading, login, navigate, validateForm]);
 
@@ -77,7 +77,7 @@ const LoginPage = () => {
                     required
                     value={email}
                     onChange={(e) => setEmail(e.target.value)}
-                    className={`mt-1 ${formErrors.email ? 'border-red-500' : ''}`}
+                    className={`mt-1 ${formErrors.email ? 'border-red-500' : ''}`} //
                     disabled={isLoading}
                   />
                   {formErrors.email && (
@@ -93,7 +93,7 @@ const LoginPage = () => {
                     required
                     value={password}
                     onChange={(e) => setPassword(e.target.value)}
-                    className={`mt-1 ${formErrors.password ? 'border-red-500' : ''}`}
+                    className={`mt-1 ${formErrors.password ? 'border-red-500' : ''}`} //
                     disabled={isLoading}
                   />
                   {formErrors.password && (
@@ -120,62 +120,84 @@ const LoginPage = () => {
                   </Link>
                 </div>
               </form>
+
+              {/* Demo Users Section */}
+              <div className="mt-8 pt-6 border-t border-gray-200">
+                <h3 className="text-lg font-medium text-gray-700 mb-4 flex items-center">
+                  <Users className="mr-2 h-5 w-5 text-nexapay-500" />
+                  Demo Users
+                </h3>
+                <div className="space-y-3 text-sm text-gray-600">
+                  <div>
+                    <p><strong>User 1:</strong></p>
+                    <p className="ml-2">Email: <code>user1@gmail.com</code></p>
+                    <p className="ml-2">Password: <code>test1234</code></p>
+                  </div>
+                  <div>
+                    <p><strong>User 2:</strong></p>
+                    <p className="ml-2">Email: <code>user2@gmail.com</code></p>
+                    <p className="ml-2">Password: <code>test1234</code></p>
+                  </div>
+                </div>
+                 <p className="mt-4 text-xs text-gray-500">
+                    Use these credentials to explore the platform's features.
+                 </p>
+              </div>
             </div>
 
-              {/* Right Panel (Feature Highlights) */}
-  <div className="border-l pl-8 hidden md:block">
-  <h2 className="text-2xl font-semibold text-gray-800 mb-6">Key Features</h2>
-  
-  <div className="space-y-6">
-    {/* Feature 1 */}
-    <div className="flex">
-      <div className="flex-shrink-0">
-        <div className="bg-nexapay-100 w-12 h-12 rounded-full flex items-center justify-center">
-          <QrCode className="h-6 w-6 text-nexapay-600" />
-        </div>
-      </div>
-      <div className="ml-4">
-        <h3 className="text-lg font-medium text-gray-800">Pay Offline</h3>
-        <p className="mt-1 text-gray-500">
-          Make payments even without an internet connection using secure QR codes.
-        </p>
-      </div>
-    </div>
+            {/* Right Panel (Feature Highlights) */}
+            <div className="border-l pl-8 hidden md:block">
+              <h2 className="text-2xl font-semibold text-gray-800 mb-6">Key Features</h2>
+              <div className="space-y-6">
+                {/* Feature 1 */}
+                <div className="flex">
+                  <div className="flex-shrink-0">
+                    <div className="bg-nexapay-100 w-12 h-12 rounded-full flex items-center justify-center">
+                      <QrCode className="h-6 w-6 text-nexapay-600" />
+                    </div>
+                  </div>
+                  <div className="ml-4">
+                    <h3 className="text-lg font-medium text-gray-800">Pay Offline</h3>
+                    <p className="mt-1 text-gray-500">
+                      Make payments even without an internet connection using secure QR codes.
+                    </p>
+                  </div>
+                </div>
 
-    {/* Feature 2 */}
-    <div className="flex">
-      <div className="flex-shrink-0">
-        <div className="bg-nexapay-100 w-12 h-12 rounded-full flex items-center justify-center">
-          <Cloud className="h-6 w-6 text-nexapay-600" />
-        </div>
-      </div>
-      <div className="ml-4">
-        <h3 className="text-lg font-medium text-gray-800">Sync Anywhere</h3>
-        <p className="mt-1 text-gray-500">
-          Your transactions sync automatically when you reconnect to the internet.
-        </p>
-      </div>
-    </div>
+                {/* Feature 2 */}
+                <div className="flex">
+                  <div className="flex-shrink-0">
+                    <div className="bg-nexapay-100 w-12 h-12 rounded-full flex items-center justify-center">
+                      <Cloud className="h-6 w-6 text-nexapay-600" />
+                    </div>
+                  </div>
+                  <div className="ml-4">
+                    <h3 className="text-lg font-medium text-gray-800">Sync Anywhere</h3>
+                    <p className="mt-1 text-gray-500">
+                      Your transactions sync automatically when you reconnect to the internet.
+                    </p>
+                  </div>
+                </div>
 
-    {/* Feature 3 */}
-    <div className="flex">
-      <div className="flex-shrink-0">
-        <div className="bg-nexapay-100 w-12 h-12 rounded-full flex items-center justify-center">
-          <div className="relative">
-            <Shield className="h-6 w-6 text-nexapay-600" />
-            <Lock className="h-3 w-3 text-nexapay-600 absolute bottom-0 right-0" />
-          </div>
-        </div>
-      </div>
-      <div className="ml-4">
-        <h3 className="text-lg font-medium text-gray-800">No Double Spending</h3>
-        <p className="mt-1 text-gray-500">
-          Our unique token system ensures your money can only be spent once, even offline.
-        </p>
-      </div>
-    </div>
-  </div>
-</div>
+                {/* Feature 3 */}
+                <div className="flex">
+                  <div className="flex-shrink-0">
+                    <div className="bg-nexapay-100 w-12 h-12 rounded-full flex items-center justify-center">
+                      <div className="relative">
+                        <Shield className="h-6 w-6 text-nexapay-600" />
+                        <Lock className="h-3 w-3 text-nexapay-600 absolute bottom-0 right-0" />
+                      </div>
+                    </div>
+                  </div>
+                  <div className="ml-4">
+                    <h3 className="text-lg font-medium text-gray-800">No Double Spending</h3>
+                    <p className="mt-1 text-gray-500">
+                      Our unique token system ensures your money can only be spent once, even offline.
+                    </p>
+                  </div>
+                </div>
+              </div>
+            </div>
           </div>
         </div>
       </div>
