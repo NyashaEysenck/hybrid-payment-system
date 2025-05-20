@@ -301,10 +301,11 @@ const WebRTCReceiveMoney = () => {
     <Layout>
       <div className="space-y-6">
         <div className="flex items-center">
-          <Button variant="ghost" onClick={() => step === 'complete' ? navigate('/offline') : resetProcess()} className="mr-4">
-            <ArrowLeft className="h-4 w-4 mr-2" />
-            {step === 'complete' ? 'Back to Offline' : (step === 'scan' ? 'Back to Offline' : 'Cancel & Rescan')}
-          </Button>
+         <Button variant="ghost" onClick={() => navigate('/offline')} className="mr-4">
+  <ArrowLeft className="h-4 w-4 mr-2" />
+  Back to Offline
+</Button>
+
           <h1 className="text-2xl font-bold text-dark">Receive Money (WebRTC)</h1>
         </div>
 
