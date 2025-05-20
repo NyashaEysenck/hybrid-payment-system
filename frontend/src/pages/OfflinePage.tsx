@@ -50,6 +50,7 @@ const OfflinePage = () => {
   const { offlineBalance, pendingTransactions, refreshOfflineBalance, isOffline } = useOfflineBalance();
   const [isProcessing, setIsProcessing] = useState(false);
   const [offlineTransactions, setOfflineTransactions] = useState<Transaction[]>([]);
+  const [previousOfflineStatus, setPreviousOfflineStatus] = useState<boolean | null>(null);
   const navigate = useNavigate();
   const onlineBalance = isOffline ? "N/A" : Number(balance);
 
@@ -75,25 +76,55 @@ const OfflinePage = () => {
     }
   }, []);
 
-  useEffect(() => {
-    const loadData = async () => {
-      setIsProcessing(true);
-      try {
-        console.log('Loading data on OfflinePage...');
-        await fetchWalletData();
-        await refreshOfflineBalance();
-        const transactions = await storageService.getTransactions();
-        const processed = processTransactions(transactions);
-        setOfflineTransactions(processed);
-        console.log('Data loaded successfully');
-      } catch (error) {
-        console.error('Error loading data:', error);
-      } finally {
-        setIsProcessing(false);
-      }
-    };
-    loadData();
+  const loadData = useCallback(async () => {
+    setIsProcessing(true);
+    try {
+      console.log('Loading data on OfflinePage...');
+      await fetchWalletData();
+      await refreshOfflineBalance();
+      const transactions = await storageService.getTransactions();
+      const processed = processTransactions(transactions);
+      setOfflineTransactions(processed);
+      console.log('Data loaded successfully');
+    } catch (error) {
+      console.error('Error loading data:', error);
+    } finally {
+      setIsProcessing(false);
+    }
   }, [fetchWalletData, refreshOfflineBalance]);
+
+  // Monitor offline/online status changes
+  useEffect(() => {
+    // Initial load
+    loadData();
+
+    // Track changes in offline status
+    if (previousOfflineStatus !== null && previousOfflineStatus !== isOffline) {
+      console.log(`Offline status changed: ${previousOfflineStatus} -> ${isOffline}`);
+      
+      // If going from offline to online, refresh data
+      if (previousOfflineStatus === true && isOffline === false) {
+        console.log('Transitioning from offline to online, refreshing wallet data...');
+        loadData();
+      }
+    }
+    
+    setPreviousOfflineStatus(isOffline);
+  }, [isOffline, previousOfflineStatus, loadData]);
+
+  // Monitor network status changes
+  useEffect(() => {
+    const handleOnline = () => {
+      console.log('Network connection detected - refreshing data');
+      loadData();
+    };
+
+    window.addEventListener('online', handleOnline);
+    
+    return () => {
+      window.removeEventListener('online', handleOnline);
+    };
+  }, [loadData]);
 
   const handleSendMoneyClick = () => {
     if (!isOffline) {
@@ -134,6 +165,14 @@ const OfflinePage = () => {
                   You have {pendingTransactions} pending offline {pendingTransactions === 1 ?
                     'transaction' : 'transactions'} to be synced
                 </div>
+              )}
+              {!isProcessing && (
+                <button 
+                  onClick={loadData} 
+                  className="text-sm text-greenleaf-600 hover:text-greenleaf-800 flex items-center mt-2"
+                >
+                  <ArrowLeftRight size={14} className="mr-1" /> Refresh balances
+                </button>
               )}
             </div>
           </WhiteCard>
