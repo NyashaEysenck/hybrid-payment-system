@@ -3,7 +3,7 @@ import React, { useState, useEffect, useCallback, useRef } from 'react';
 import Layout from "@/components/Layout";
 import WhiteCard from "@/components/WhiteCard";
 import { useAuth } from '@/contexts/AuthContext';
-import { useWallet } from '@/contexts/Wallet/WalletContext';
+import { useWallet } from '@/contexts/WalletContext';
 import { useOfflineBalance } from '@/contexts/OfflineBalanceContext';
 import { useNavigate } from 'react-router-dom';
 import QRCode from 'react-qr-code';
