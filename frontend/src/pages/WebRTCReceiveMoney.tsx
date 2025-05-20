@@ -247,123 +247,110 @@ const WebRTCReceiveMoney = () => {
   };
 
   const handlePaymentReceived = async (paymentData: any) => {
-    console.log('Processing payment data:', paymentData);
-    let receiptId = '';
-    let pendingTransaction: Transaction | null = null;
-    try {
-      if (!paymentData.amount || !paymentData.senderID || !paymentData.transactionId) {
-        console.error('Invalid payment data:', paymentData);
-        throw new Error('Invalid payment data');
-      }
+  console.log('Processing payment data:', paymentData);
+  let receiptId = '';
+  try {
+    if (!paymentData.amount || !paymentData.senderID || !paymentData.transactionId) {
+      console.error('Invalid payment data:', paymentData);
+      throw new Error('Invalid payment data');
+    }
 
-      receiptId = `receipt-${Date.now()}-${Math.random().toString(36).substring(2, 10)}`;
-      console.log('Generated receipt ID:', receiptId);
-      const amount = Number(paymentData.amount);
-      console.log('Payment amount:', amount);
+    receiptId = `receipt-${Date.now()}-${Math.random().toString(36).substring(2, 10)}`;
+    console.log('Generated receipt ID:', receiptId);
+    const amount = Number(paymentData.amount);
+    console.log('Payment amount:', amount);
 
-      const newPendingTransaction: Transaction = {
+    const completedTransaction: Transaction = {
+      id: receiptId,
+      type: 'receive',
+      amount: amount,
+      sender: paymentData.senderID || paymentData.sender || 'unknown',
+      recipient: user?.email || 'unknown',
+      timestamp: paymentData.timestamp || Date.now(),
+      note: paymentData.note,
+      receiptId,
+      status: 'completed' as const,
+      synced: false
+    };
+
+    setTransaction(completedTransaction);
+    console.log(`Saving completed transaction: ${completedTransaction.id}`);
+    await storageService.saveTransaction(completedTransaction);
+
+    console.log('Adding to offline balance:', amount);
+    await addToOfflineBalance(amount);
+    console.log('Balance update completed');
+
+    console.log('Sending receipt to sender...');
+    await webrtcService?.sendMessage({
+      type: 'receipt',
+      receiptId: receiptId,
+      transactionId: paymentData.transactionId,
+      status: 'success'
+    });
+    console.log('Sent receipt:', {
+      receiptId: receiptId,
+      transactionId: paymentData.transactionId,
+      status: 'success'
+    });
+
+    setStep('complete');
+    toast({
+      title: "Payment Received",
+      description: `$${amount.toFixed(2)} received successfully. Offline balance updated.`,
+      duration: 5000,
+    });
+  } catch (error) {
+    console.error('Error processing payment:', error);
+    const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+    setError(`Payment failed: ${errorMessage}`);
+
+    // Only save failed transaction if we have a receiptId (payment was partially processed)
+    if (receiptId) {
+      const failedTransaction: Transaction = {
         id: receiptId,
         type: 'receive',
-        amount: amount,
-        sender: paymentData.senderID || paymentData.sender || 'unknown',
+        amount: Number(paymentData?.amount || 0),
+        sender: paymentData?.senderID || paymentData?.sender || 'unknown',
         recipient: user?.email || 'unknown',
-        timestamp: paymentData.timestamp || Date.now(),
-        note: paymentData.note,
+        timestamp: paymentData?.timestamp || Date.now(),
+        note: paymentData?.note,
         receiptId,
-        status: 'pending' as const,
+        status: 'failed' as const,
         synced: false
       };
-      pendingTransaction = newPendingTransaction;
-      setTransaction(pendingTransaction);
-      console.log(`Logging transaction ID before saving (pending): ${pendingTransaction.id}`);
-      await storageService.saveTransaction(pendingTransaction); // Save pending transaction
+      setTransaction(failedTransaction);
+      console.log(`Saving failed transaction: ${failedTransaction.id}`);
+      await storageService.saveTransaction(failedTransaction);
+    }
 
-      console.log('Adding to offline balance:', amount);
-      await addToOfflineBalance(amount);
-      console.log('Balance update completed');
-
-      console.log('Sending receipt to sender...');
+    try {
       await webrtcService?.sendMessage({
         type: 'receipt',
         receiptId: receiptId,
-        transactionId: paymentData.transactionId,
-        status: 'success'
+        status: 'failed',
+        error: errorMessage,
+        transactionId: paymentData?.transactionId
       });
-      console.log('Sent receipt:', {
-        receiptId: pendingTransaction.receiptId,
-        transactionId: paymentData.transactionId,
-        status: 'success'
+      console.log('Sent error receipt:', {
+        receiptId,
+        transactionId: paymentData?.transactionId,
+        status: 'failed',
+        error: errorMessage
       });
-
-      // Avoid saving failed states multiple times if it was already failed
-      if (pendingTransaction.status !== 'failed') {
-        const completedTransaction: Transaction = {
-          ...pendingTransaction,
-          status: 'completed' as const
-        };
-        setTransaction(completedTransaction);
-        console.log(`Logging transaction ID before saving (completed): ${completedTransaction.id}`);
-        await storageService.saveTransaction(completedTransaction); // Save completed transaction
-      }
-
-      setStep('complete');
-      toast({
-        title: "Payment Received",
-        description: `$${amount.toFixed(2)} received successfully. Offline balance updated.`,
-        duration: 5000,
-      });
-    } catch (error) {
-      console.error('Error processing payment:', error);
-      const errorMessage = error instanceof Error ? error.message : 'Unknown error';
-      setError(`Payment failed: ${errorMessage}`);
-
-      // Avoid saving failed states multiple times
-      if (pendingTransaction && pendingTransaction.status !== 'failed') {
-        const failedTransaction: Transaction = {
-          ...pendingTransaction,
-          status: 'failed' as const
-        };
-        setTransaction(failedTransaction);
-        console.log(`Logging transaction ID before saving (payment error - pending): ${failedTransaction.id}`);
-        await storageService.saveTransaction(failedTransaction); // Save failed transaction
-      } else if (transaction && transaction.status !== 'failed') {
-        const failedTransaction: Transaction = {
-          ...transaction,
-          status: 'failed' as const
-        };
-        setTransaction(failedTransaction);
-        console.log(`Logging transaction ID before saving (payment error - existing): ${failedTransaction.id}`);
-        await storageService.saveTransaction(failedTransaction); // Save failed transaction
-      }
-
-
-      try {
-        await webrtcService?.sendMessage({
-          type: 'receipt',
-          receiptId: receiptId,
-          status: 'failed',
-          error: errorMessage,
-          transactionId: paymentData.transactionId
-        });
-        console.log('Sent error receipt:', {
-          receiptId,
-          transactionId: paymentData.transactionId,
-          status: 'failed',
-          error: errorMessage
-        });
-      } catch (sendError) {
-        console.error('Error sending error receipt:', sendError);
-      }
-
-      toast({
-        title: "Payment Error",
-        description: errorMessage,
-        variant: "destructive",
-        duration: 7000,
-      });
-      setStep('waitForPayment'); // Stay on waitForPayment or go back to scan? Staying for now.
+    } catch (sendError) {
+      console.error('Error sending error receipt:', sendError);
     }
-  };
+
+    toast({
+      title: "Payment Error",
+      description: errorMessage,
+      variant: "destructive",
+      duration: 7000,
+    });
+    setStep('waitForPayment');
+  }
+};
 
   const resetProcess = () => {
     console.log('Resetting WebRTC process...');
