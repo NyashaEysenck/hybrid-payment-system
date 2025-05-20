@@ -54,6 +54,9 @@ Before attempting any QR code offline transfers:
 
 ## Steps to Perform QR Code Offline Transfer
 
+**Navigate to offline transactions in the sidebar**
+**- or click manage offline payments from the dashboard**
+
 ### For the Payer (Sending Money):
 
 1. **Prepare Payment**:
