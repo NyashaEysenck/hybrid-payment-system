@@ -160,7 +160,7 @@ export class IndexedDBStorageService implements StorageService {
     });
   }
 
-  async async saveTransaction(tx: Transaction): Promise<void> {
+  async saveTransaction(tx: Transaction): Promise<void> {
     // First get all existing transactions
     const existingTransactions = await this.getTransactions();
     
