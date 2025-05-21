@@ -97,6 +97,7 @@ const OfflinePage = () => {
       const refreshData = async () => {
         try {
           await fetchWalletData();
+          await refreshOfflineBalance();
           console.log('Wallet data refreshed after coming online');
         } catch (error) {
           console.error('Error refreshing wallet data after going online:', error);
