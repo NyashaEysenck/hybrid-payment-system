@@ -237,7 +237,7 @@ const OfflinePage = () => {
                   </li>
                   <li>After completing all offline transfers:
                     <ul className="list-disc pl-5">
-                        <li>Toggle back to Online Mode</li>
+                        <li>Toggle back to Online Mode(MAKE SURE YOU DEVICE IS ONLINE)</li>
                         <li>Your transactions will sync with the server</li>
                         <li>Your balances will be reconciled</li>
                     </ul>
