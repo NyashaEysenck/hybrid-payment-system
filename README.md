@@ -48,8 +48,7 @@ Before attempting any QR code offline transfers:
    - You'll see "Offline Mode" indicator in the UI
 
 2. After completing all offline transfers:
-   - Toggle back to Online Mode
-   - Your transactions will sync with the server
+   - Toggle back to Online Mode (Make sure you're online!!)
    - Your balances will be reconciled
 
 ## Steps to Perform QR Code Offline Transfer
