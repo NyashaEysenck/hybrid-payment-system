@@ -40,6 +40,8 @@ The QR code transfer system uses WebRTC for peer-to-peer communication, allowing
 
 ## Important: Offline Mode Requirements
 
+**Offline mode works without internet connection but both devices must be connected to the same network eg. You can use a Mobile Hotspot Connection**
+
 Before attempting any QR code offline transfers:
 
 1. Toggle to Offline Mode:
