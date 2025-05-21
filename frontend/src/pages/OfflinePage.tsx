@@ -46,27 +46,7 @@ const OfflinePage = () => {
   // Track online balance display without affecting the rendering
   const onlineBalance = isOffline ? "N/A" : Number(balance);
 
-  const resetDatabases = useCallback(async () => {
-    setIsProcessing(true);
-    try {
-      console.log('Resetting IndexedDB databases...');
-      await new Promise<void>((resolve, reject) => {
-        const deleteRequest = indexedDB.deleteDatabase('offline-payments');
-        deleteRequest.onsuccess = () => {
-          console.log('Database deleted successfully');
-          resolve();
-        };
-        deleteRequest.onerror = () => {
-          console.error('Error deleting database');
-          reject(new Error('Failed to delete database'));
-        };
-      });
-      window.location.reload();
-    } catch (error) {
-      console.error('Error resetting databases:', error);
-      setIsProcessing(false);
-    }
-  }, []);
+
 
   // Initial data loading
   useEffect(() => {
@@ -98,6 +78,7 @@ const OfflinePage = () => {
         try {
           await fetchWalletData();
           await refreshOfflineBalance();
+          window.location.reload();
           console.log('Wallet data refreshed after coming online');
         } catch (error) {
           console.error('Error refreshing wallet data after going online:', error);
