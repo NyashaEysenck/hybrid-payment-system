@@ -1,4 +1,3 @@
-
 # Dual Online-Offline Payment System
 
 ## Overview
@@ -36,7 +35,98 @@ The system uses IndexedDB as its offline storage solution, providing a robust an
 
 ## QR Code Transfer Technology
 
-The QR code transfer system uses WebRTC for peer-to-peer communication, allowing secure offline payments between devices. Here's how it works:
+This system enables offline peer-to-peer (P2P) payments by leveraging WebRTC for direct communication between two devices and QR codes for the initial exchange of connection details.
+
+### Technology Overview
+
+#### WebRTC (Web Real-Time Communication)
+WebRTC is a technology that allows web browsers and mobile applications to establish direct peer-to-peer connections. This means data can be sent directly between users' devices without needing to pass through a central server once the connection is set up. In this system, it's used for:
+
+- **Establishing a secure data channel**: A dedicated channel for sending payment information and confirmations directly between the sender and receiver.
+- **Offline capability**: Once the initial signaling (connection setup) is done, the actual data transfer can occur over a local network or other direct connection methods supported by WebRTC, which is ideal for offline scenarios.
+
+#### QR Codes
+QR codes are used to exchange the initial WebRTC signaling data (offers and answers) between the two devices when they are not yet connected.
+
+- **Offline Data Exchange**: They provide a simple way to transfer text-based information (the WebRTC session descriptions) from one device's screen to another's camera.
+- **Connection Data**: The data encoded in the QR codes includes the Session Description Protocol (SDP) information, which tells each device how to connect to the other.
+
+### Establishing Communication
+
+The process of establishing a WebRTC connection involves an "offer" and "answer" mechanism, facilitated by QR codes:
+
+#### Sender Initiates (Creating an Offer)
+- The user intending to send money (the sender) initiates the process
+- Their device creates an RTCPeerConnection object
+- A data channel, named paymentChannel, is created on this connection to ensure ordered delivery of messages
+- The sender's WebRTC service then generates an "offer" (an SDP message) that contains the sender's connection parameters
+- This offer, along with the sender's ID, is packaged into a WebRTCConnectionData object
+
+#### Offer QR Code Generation
+- The WebRTCConnectionData (the offer) is then encoded into a string, often Base64, to be represented as a QR code
+- **Multi-Chunk QR Codes**: QR codes have a limited data capacity. If the offer SDP is too large for a single QR code, it's split into multiple smaller chunks. Each chunk is then displayed as a separate QR code, typically with a prefix indicating its sequence (e.g., "CHUNK:1:3:data...", "CHUNK:2:3:data..."). The sender's app will display these QR codes one by one or indicate that multiple scans are needed.
+
+#### Receiver Scans Offer QR Code(s)
+- The user intending to receive money (the receiver) uses their device's camera to scan the QR code(s) displayed by the sender
+- If multiple chunks are detected (e.g., via the "CHUNK:" prefix), the receiver's app collects all chunks
+- Once all chunks are scanned, they are reassembled and decoded to retrieve the original WebRTCConnectionData offer
+
+#### Receiver Processes Offer and Creates Answer
+- The receiver's device creates its own RTCPeerConnection object
+- It sets the received offer as the "remote description"
+- The receiver's WebRTC service then generates an "answer" (another SDP message) containing its own connection parameters
+- This answer, along with the receiver's ID (e.g., user email), is packaged into a WebRTCConnectionData object
+
+#### Answer QR Code Generation
+- Similar to the offer, the receiver's WebRTCConnectionData (the answer) is encoded into one or more QR codes. This also supports multi-chunking if the answer SDP is large. The receiver's app displays these QR codes.
+
+#### Sender Scans Answer QR Code(s)
+- The sender scans the QR code(s) displayed by the receiver
+- If multiple chunks are involved, the sender's app collects and reassembles them
+- The decoded WebRTCConnectionData answer is retrieved
+
+#### Connection Finalization
+- The sender sets the received answer as the "remote description" on their RTCPeerConnection
+- At this point, WebRTC attempts to establish the direct P2P connection using the exchanged ICE candidates (part of the SDP, handled by waitForIceGatheringComplete)
+- Event handlers for data channel opening (onopen) and connection state changes (onconnectionstatechange) monitor the progress. When the data channel is open and the connection state is 'connected', the devices are ready to communicate directly.
+
+### How the Payment Works
+
+The payment process begins with the sender entering the transaction details, followed by the QR code exchange to establish communication, and then immediate payment processing:
+
+#### Transaction Setup (Sender)
+- The sender enters the payment amount and an optional note
+- A unique transaction ID is generated (e.g., using uuidv4)
+- A preliminary transaction record with 'pending' status is created and stored locally by the sender (using storageService)
+
+#### WebRTC Connection & Payment Processing
+Once the WebRTC data channel is established through the QR code exchange (connected state), the payment immediately processes:
+
+- The sender automatically sends a 'payment' message containing the amount, sender ID, recipient ID (if known, or taken from the answer data), timestamp, note, and the transaction ID through the established WebRTC data channel
+
+#### Payment Processing (Receiver)
+- The receiver's app listens for messages on the data channel
+- Upon receiving the 'payment' message, it validates the data
+- A receipt ID is generated
+- A transaction record with 'pending' status is created and stored locally by the receiver, linked to the sender's transaction ID and its own receipt ID
+- The payment amount is added to the receiver's offline balance
+- The transaction status is updated to 'completed' and saved again
+
+#### Receipt Confirmation (Receiver to Sender)
+- The receiver sends a 'receipt' message back to the sender via the data channel. This message includes the original transaction ID, the generated receipt ID, and a status ('success' or 'failed')
+
+#### Transaction Finalization (Sender)
+- The sender's app receives the 'receipt' message
+- It updates its local transaction record with the receipt ID and status based on the message
+- If the receipt indicates success:
+  - The sender's offline balance is debited by the sent amount
+  - The transaction is marked 'completed' locally
+  - A success message is displayed to the sender
+- If the receipt indicates failure or a timeout occurs (e.g., no receipt within 30 seconds):
+  - The transaction is marked 'failed' locally
+  - An error message is shown, and the user might be advised to check with the recipient
+
+The payment is considered "worked" or successful from the sender's perspective when a success receipt is received and their balance is updated. From the receiver's perspective, it's successful when the payment message is processed, their balance is updated, and a receipt is sent. The local storage (storageService) ensures that transaction states are persisted on both devices even if the app closes, helping with reconciliation later.
 
 ## Important: Offline Mode Requirements
 
@@ -60,9 +150,9 @@ Before attempting any QR code offline transfers:
 
 ### For the Payer (Sending Money):
 
-1. **Prepare Payment**:
+1. **Set Payment Details**:
    - Go to "Send Money" page
-   - Enter the payment amount
+   - Enter the payment amount and optional note
    - Click "Generate QR Code"
 
 2. **QR Code Exchange**:
@@ -70,7 +160,7 @@ Before attempting any QR code offline transfers:
    - Show first QR code to payee
    - Wait for payee to scan all QR codes in order
 
-3. **Receive Answer**:
+3. **Scan Answer QR Code(s)**:
    - Wait for payee's answer QR code
    - If split into chunks:
      - Scan first chunk QR code
@@ -79,17 +169,18 @@ Before attempting any QR code offline transfers:
    - If single QR code:
      - Scan single answer QR code
 
-4. **Completion**:
-   - Wait for payment confirmation
+4. **Receive Payment Confirmation**:
+   - Payment processes automatically once connection is established
+   - Receive receipt confirmation from payee
    - Your offline balance updates automatically
 
 ### For the Payee (Receiving Money):
 
-1. **Receive Payment**:
+1. **Prepare to Receive**:
    - Go to "Receive Money" page
    - Click "Scan QR Code"
 
-2. **QR Code Exchange**:
+2. **Scan Payment QR Code(s)**:
    - If payer's QR code is split:
      - Scan first chunk QR code
      - Wait for remaining chunks
@@ -97,9 +188,9 @@ Before attempting any QR code offline transfers:
    - If single QR code:
      - Scan single QR code
 
-3. **Send Answer**:
+3. **Generate Answer QR Code(s)**:
    - System establishes WebRTC connection
-   - Generate answer QR code
+   - Generate answer QR code automatically
    - If split into chunks:
      - Show first answer QR code
      - Wait for payer to scan first QR code
@@ -107,8 +198,9 @@ Before attempting any QR code offline transfers:
      - Show single answer QR code
      - Wait for payer to scan QR code
 
-4. **Completion**:
-   - Wait for payment to be processed
+4. **Receive Payment & Send Receipt**:
+   - Payment processes automatically once connection is established
+   - Send receipt confirmation to payer
    - Your offline balance updates automatically
 
 ## Important Notes
@@ -218,4 +310,3 @@ This project is licensed under the MIT License. See the [LICENSE](LICENSE) file 
 ## Contact
 
 For any questions or suggestions, please open an issue or contact me directly.
-
